@@ -1,0 +1,8965 @@
+// // src/components/ProjectOverview.jsx
+// import React, { useEffect, useMemo, useState } from "react";
+// import { useLocation, useNavigate, useParams } from "react-router-dom";
+// import axios from "axios";
+// import { useTheme } from "../ThemeContext";
+// import toast from "react-hot-toast";
+// import {
+//   BarChart,
+//   Bar,
+//   LineChart,
+//   Line,
+//   AreaChart,
+//   Area,
+//   PieChart,
+//   Pie,
+//   Cell,
+//   RadarChart,
+//   PolarGrid,
+//   PolarAngleAxis,
+//   PolarRadiusAxis,
+//   Radar,
+//   ComposedChart,
+//   XAxis,
+//   YAxis,
+//   CartesianGrid,
+//   Tooltip,
+//   Legend,
+//   ResponsiveContainer,
+// } from "recharts";
+
+// const API_BASE = "https://konstruct.world";
+
+// const authHeaders = () => ({
+//   Authorization: `Bearer ${
+//     localStorage.getItem("ACCESS_TOKEN") ||
+//     localStorage.getItem("TOKEN") ||
+//     localStorage.getItem("token") ||
+//     ""
+//   }`,
+// });
+
+// // --------- small helpers ----------
+// function safeNumber(n, fallback = 0) {
+//   if (typeof n === "number" && !Number.isNaN(n)) return n;
+//   const parsed = Number(n);
+//   return Number.isNaN(parsed) ? fallback : parsed;
+// }
+
+// function pct(part, total) {
+//   const p = safeNumber(part);
+//   const t = safeNumber(total);
+//   if (!t || t <= 0) return 0;
+//   return Math.round((p / t) * 100);
+// }
+
+// function fmtInt(n) {
+//   return safeNumber(n).toLocaleString("en-IN");
+// }
+
+// function titleCaseStatus(status) {
+//   if (!status) return "-";
+//   return String(status)
+//     .toLowerCase()
+//     .split("_")
+//     .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+//     .join(" ");
+// }
+
+// function statusColor(status) {
+//   const s = String(status || "").toLowerCase();
+
+//   if (s === "completed") {
+//     return {
+//       bg: "rgba(16,185,129,0.15)",
+//       border: "rgba(16,185,129,0.5)",
+//       text: "#047857",
+//       gradient: "linear-gradient(135deg, #10b981, #34d399)",
+//       chartColor: "#10b981",
+//     };
+//   }
+//   if (s === "pending_checker" || s === "pending_for_checker") {
+//     return {
+//       bg: "rgba(59,130,246,0.15)",
+//       border: "rgba(59,130,246,0.5)",
+//       text: "#1d4ed8",
+//       gradient: "linear-gradient(135deg, #3b82f6, #60a5fa)",
+//       chartColor: "#3b82f6",
+//     };
+//   }
+//   if (s === "pending_for_inspector") {
+//     return {
+//       bg: "rgba(249,115,22,0.15)",
+//       border: "rgba(249,115,22,0.5)",
+//       text: "#c2410c",
+//       gradient: "linear-gradient(135deg, #f97316, #fb923c)",
+//       chartColor: "#f97316",
+//     };
+//   }
+//   if (s === "not_started" || s === "created") {
+//     return {
+//       bg: "rgba(148,163,184,0.15)",
+//       border: "rgba(148,163,184,0.5)",
+//       text: "#475569",
+//       gradient: "linear-gradient(135deg, #94a3b8, #cbd5e1)",
+//       chartColor: "#94a3b8",
+//     };
+//   }
+//   return {
+//     bg: "rgba(148,163,184,0.15)",
+//     border: "rgba(148,163,184,0.5)",
+//     text: "#475569",
+//     gradient: "linear-gradient(135deg, #94a3b8, #cbd5e1)",
+//     chartColor: "#94a3b8",
+//   };
+// }
+
+// function formatDateTime(dt) {
+//   if (!dt) return "-";
+//   const d = new Date(dt);
+//   if (Number.isNaN(d.getTime())) return "-";
+//   return d.toLocaleString();
+// }
+
+// function buildLocationLabel(loc, flatLookup = {}) {
+//   if (!loc) return "-";
+
+//   const parts = [];
+
+//   const flatMeta = loc.flat_id ? flatLookup[loc.flat_id] : null;
+
+//   if (flatMeta) {
+//     parts.push(
+//       `Flat ${flatMeta.number}${
+//         flatMeta.typeName ? ` (${flatMeta.typeName})` : ""
+//       }`
+//     );
+//   } else if (loc.flat_id) {
+//     parts.push(`Flat-${loc.flat_id}`);
+//   }
+
+//   if (flatMeta?.levelName) {
+//     parts.push(flatMeta.levelName);
+//   } else if (loc.level_id) {
+//     parts.push(`Level-${loc.level_id}`);
+//   }
+
+//   return parts.length ? parts.join(" / ") : "-";
+// }
+
+// // summary builder used when filters are active
+// function buildSummaryFromItems(items) {
+//   const byStatus = {};
+//   let totalWithSubmission = 0;
+//   const byStageMap = {};
+//   const roleSummary = {};
+
+//   items.forEach((item) => {
+//     const status = String(item.item_status || "").toLowerCase() || "unknown";
+//     byStatus[status] = (byStatus[status] || 0) + 1;
+
+//     if (item.latest_submission) {
+//       totalWithSubmission += 1;
+//     }
+
+//     const stageId = item.checklist?.stage_id;
+//     if (stageId != null) {
+//       let stageRec = byStageMap[stageId];
+//       if (!stageRec) {
+//         stageRec = {
+//           stage_id: stageId,
+//           items: 0,
+//           by_latest_status: {},
+//         };
+//         byStageMap[stageId] = stageRec;
+//       }
+//       stageRec.items += 1;
+//       stageRec.by_latest_status[status] =
+//         (stageRec.by_latest_status[status] || 0) + 1;
+//     }
+
+//     const rolesObj = item.roles || {};
+//     Object.entries(rolesObj).forEach(([rk, info]) => {
+//       if (!info || !info.user_id) return;
+//       const key = rk.toUpperCase();
+//       let rRec = roleSummary[key];
+//       if (!rRec) {
+//         rRec = {
+//           items_touched: 0,
+//           distinct_users: 0,
+//           _userIds: new Set(),
+//         };
+//         roleSummary[key] = rRec;
+//       }
+//       rRec.items_touched += 1;
+//       rRec._userIds.add(info.user_id);
+//     });
+//   });
+
+//   Object.values(roleSummary).forEach((r) => {
+//     r.distinct_users = r._userIds.size;
+//     delete r._userIds;
+//   });
+
+//   return {
+//     total_items: items.length,
+//     total_with_submission: totalWithSubmission,
+//     by_latest_status: byStatus,
+//     by_stage: Object.values(byStageMap),
+//     roles: roleSummary,
+//   };
+// }
+
+// const PARETO_CATEGORY_MODES = [
+//   { value: "room", label: "By Room Category" },
+//   { value: "flatType", label: "By Flat Type" },
+//   { value: "checklist", label: "By Checklist title" },
+//     { value: "question", label: "By Question" },
+
+// ];
+
+// // 👇 helper – pareto ke liye category label nikalne ke liye
+// function getParetoCategoryLabel(item, flatLookup, mode) {
+//   const loc = item.location || {};
+//   const cl = item.checklist || {};
+
+//   // 1) Room based
+//   if (mode === "room") {
+//     const label =
+//       loc.room_category ||
+//       loc.room_type ||
+//       loc.room ||
+//       null;
+//     return label || "⚠ Unmapped Room";
+//   }
+
+//   // 2) Flat type based (1 BHK / 2 BHK etc.)
+//   if (mode === "flatType") {
+//     const flatId = loc.flat_id;
+//     const meta = flatId ? flatLookup[flatId] : null;
+//     return (
+//       meta?.typeName ||
+//       (meta?.number ? `Flat ${meta.number}` : null) ||
+//       "⚠ Unmapped Flat Type"
+//     );
+//   }
+
+//   // 3) Checklist category based
+//  // 3) Checklist category based
+// if (mode === "checklist") {
+//   // sabse pehle deep category levels
+//   const label =
+//     cl.category_level3_name ||
+//     cl.category_level3_label ||
+//     cl.category_level3_title ||
+//     (cl.category_level3 && (cl.category_level3.name || cl.category_level3.title)) ||
+
+//     cl.category_level2_name ||
+//     cl.category_level2_label ||
+//     (cl.category_level2 && (cl.category_level2.name || cl.category_level2.title)) ||
+
+//     cl.category_level1_name ||
+//     cl.category_level1_label ||
+//     (cl.category_level1 && (cl.category_level1.name || cl.category_level1.title)) ||
+
+//     // base category fields
+//     cl.category_name ||
+//     cl.category_label ||
+//     cl.category_title ||
+//     (cl.category && (cl.category.name || cl.category.title)) ||
+
+//     // ✅ fallback: checklist ka hi title ko category treat karo
+//     cl.name ||
+//     cl.title ||
+//     null;
+
+//   if (label) return String(label);
+//   if (cl.id) return `Checklist #${cl.id}`;
+//   return "⚠ Unmapped Checklist title";
+// }
+
+
+//   // 4) Question level Pareto
+//   if (mode === "question") {
+//     const q =
+//       item.item_title ||
+//       item.question ||
+//       cl.question_text ||
+//       null;
+//     return q || `⚠ Unmapped Question (${item.item_id || "N/A"})`;
+//   }
+
+//   // fallback
+//   return "Other";
+// }
+
+
+
+// const CORE_ROLES_FOR_HEAD = [
+//   "MAKER",
+//   "SUPERVISOR",
+//   "CHECKER",
+//   "PROJECT_MANAGER",
+//   "PROJECT_HEAD",
+//   "MANAGER",
+//   "HEAD",
+// ];
+
+// const CHART_COLORS = {
+//   primary: "#8b5cf6",
+//   secondary: "#3b82f6",
+//   success: "#10b981",
+//   warning: "#f59e0b",
+//   danger: "#ef4444",
+//   info: "#06b6d4",
+//   purple: "#a855f7",
+//   pink: "#ec4899",
+//   indigo: "#6366f1",
+//   orange: "#f97316",
+// };
+
+// const ProjectOverview = () => {
+//   const { id } = useParams();
+//   const navigate = useNavigate();
+//   const { theme } = useTheme();
+//   const location = useLocation();
+
+//   const [stats, setStats] = useState(null);
+//   const [loading, setLoading] = useState(true);
+//   const [error, setError] = useState("");
+
+//   const [globalFilters, setGlobalFilters] = useState({
+//     status: "",
+//     role: "",
+//     stageId: "",
+//     buildingId: "",
+//      flatCategory: "",
+//     roomCategory: "",
+//     timeWindow: "all", // all | 30d | 7d
+//   });
+
+//   const [questionStats, setQuestionStats] = useState(null);
+//   const [loadingQuestions, setLoadingQuestions] = useState(false);
+//   const [questionFilters, setQuestionFilters] = useState({
+//     stageId: "",
+//     categoryId: "",
+//     buildingId: "",
+//     floorId: "",
+//     roomCategory: "",
+//     statusBucket: "open", // open | closed | all
+//   });
+
+//   const [userMap, setUserMap] = useState({});
+//   const [users, setUsers] = useState([]);
+//   const [stageMap, setStageMap] = useState({});
+//   const [flatLookup, setFlatLookup] = useState({});
+
+//   const projectFromState = location.state?.project || null;
+
+//   const [viewMode, setViewMode] = useState("head");
+
+//   useEffect(() => {
+//     try {
+//       const userDataStr = localStorage.getItem("USER_DATA");
+//       const userData = userDataStr ? JSON.parse(userDataStr) : null;
+
+//       const roleFromStorage =
+//         localStorage.getItem("ROLE") ||
+//         userData?.role ||
+//         (userData?.roles && userData.roles[0]) ||
+//         "";
+
+//       const normalizedProjectRoles = Array.isArray(projectFromState?.roles)
+//         ? projectFromState.roles.map((r) =>
+//             typeof r === "string" ? r : r?.role || ""
+//           )
+//         : [];
+
+//       const allRoleStrings = [roleFromStorage, ...(normalizedProjectRoles || [])]
+//         .filter(Boolean)
+//         .map((r) => String(r).toLowerCase());
+
+//       const isManager =
+//         userData?.is_manager ||
+//         allRoleStrings.some((r) =>
+//           ["manager", "project_manager"].some((x) => r.includes(x))
+//         );
+
+//       const isHead = allRoleStrings.some((r) =>
+//         ["project_head", "head"].some((x) => r.includes(x))
+//       );
+
+//       const isSuperAdmin =
+//         (typeof roleFromStorage === "string" &&
+//           roleFromStorage.toLowerCase().includes("super admin")) ||
+//         userData?.superadmin === true ||
+//         userData?.is_superadmin === true ||
+//         userData?.is_staff === true;
+
+//       if (isSuperAdmin || isManager) {
+//         setViewMode("manager");
+//       } else if (isHead) {
+//         setViewMode("head");
+//       } else {
+//         setViewMode("manager");
+//       }
+//     } catch (e) {
+//       console.error("Failed to derive view mode", e);
+//       setViewMode("head");
+//     }
+//   }, [projectFromState]);
+
+//   const resolveUserName = (uid) => {
+//     if (!uid) return "-";
+//     return userMap[uid] || `User #${uid}`;
+//   };
+
+//   useEffect(() => {
+//     const fetchAll = async () => {
+//       setLoading(true);
+//       setError("");
+//       try {
+//         const [statsRes, usersRes] = await Promise.all([
+//           axios.get(`${API_BASE}/checklists/stats/watcher-deep/`, {
+//             params: { project_id: id },
+//             headers: authHeaders(),
+//           }),
+//           axios.get(`${API_BASE}/users/users-by-creator/`, {
+//             headers: authHeaders(),
+//           }),
+//         ]);
+
+//         const statsData = statsRes.data;
+//         setStats(statsData);
+
+//         const uMap = {};
+//         (usersRes.data || []).forEach((u) => {
+//           const displayName =
+//             (u.first_name && u.first_name.trim()) ||
+//             (u.username && u.username.trim()) ||
+//             u.email ||
+//             `User #${u.id}`;
+//           uMap[u.id] = displayName;
+//         });
+//         setUserMap(uMap);
+//         setUsers(usersRes.data || []);
+
+//         const phaseSet = new Set();
+//         (statsData.items || []).forEach((item) => {
+//           const phId = item.checklist?.phase_id;
+//           if (phId) phaseSet.add(phId);
+//         });
+//         const phaseIds = Array.from(phaseSet);
+
+//         const newStageMap = {};
+
+//         if (phaseIds.length > 0) {
+//           await Promise.all(
+//             phaseIds.map((phaseId) =>
+//               axios
+//                 .get(`${API_BASE}/projects/stages/by_phase/${phaseId}/`, {
+//                   headers: authHeaders(),
+//                 })
+//                 .then((resp) => {
+//                   (resp.data || []).forEach((stage) => {
+//                     if (stage && stage.id != null) {
+//                       newStageMap[stage.id] =
+//                         stage.name ||
+//                         (stage.stage_name && stage.stage_name.name) ||
+//                         `Stage #${stage.id}`;
+//                     }
+//                   });
+//                 })
+//                 .catch((err) => {
+//                   console.error("Failed to load stages for phase", phaseId, err);
+//                 })
+//             )
+//           );
+//         }
+
+//         setStageMap(newStageMap);
+//       } catch (err) {
+//         console.error(err);
+//         const msg =
+//           err?.response?.data?.detail ||
+//           err?.response?.data?.message ||
+//           "Failed to load project stats.";
+//         setError(msg);
+//         toast.error(msg);
+//       } finally {
+//         setLoading(false);
+//       }
+//     };
+
+//     if (id) {
+//       fetchAll();
+//     }
+//   }, [id]);
+
+//   // levels-with-flats for flat label
+//   useEffect(() => {
+//     if (!stats?.items || !Array.isArray(stats.items)) return;
+
+//     const buildingIds = Array.from(
+//       new Set(
+//         stats.items
+//           .map((it) => it.location?.building_id)
+//           .filter(Boolean)
+//       )
+//     );
+
+//     if (!buildingIds.length) return;
+
+//     const fetchLevelsWithFlats = async () => {
+//       try {
+//         const responses = await Promise.all(
+//           buildingIds.map((bid) =>
+//             axios.get(`${API_BASE}/projects/levels-with-flats/${bid}/`, {
+//               headers: authHeaders(),
+//             })
+//           )
+//         );
+
+//         const map = {};
+
+//         responses.forEach((res) => {
+//   (res.data || []).forEach((level) => {
+//     const levelName = level.name;
+//     const levelId = level.id; // 👈 yaha se floor/level id
+
+//     (level.flats || []).forEach((flat) => {
+//       map[flat.id] = {
+//         number: flat.number,
+//         typeName: flat.flattype?.type_name || "",
+//         levelName,
+//         levelId, // 👈 add this
+//       };
+//     });
+//   });
+// });
+
+
+//         setFlatLookup(map);
+//       } catch (e) {
+//         console.error("Failed to load levels-with-flats", e);
+//       }
+//     };
+
+//     fetchLevelsWithFlats();
+//   }, [stats]);
+
+//   // question hotspots
+//   useEffect(() => {
+//     if (!id) return;
+
+//     const fetchQuestions = async () => {
+//       setLoadingQuestions(true);
+//       try {
+//         const res = await axios.get(
+//           `${API_BASE}/checklists/stats/questions/`,
+//           {
+//             params: {
+//               project_id: id,
+//               limit: 50,
+//             },
+//             headers: authHeaders(),
+//           }
+//         );
+//         setQuestionStats(res.data || null);
+//       } catch (err) {
+//         console.error("Failed to load question hotspots", err);
+//       } finally {
+//         setLoadingQuestions(false);
+//       }
+//     };
+
+//     fetchQuestions();
+//   }, [id]);
+
+//   const bgColor = theme === "dark" ? "#0f172a" : "#f8fafc";
+//   const cardColor = theme === "dark" ? "#1e293b" : "#ffffff";
+//   const borderColor = theme === "dark" ? "#334155" : "#192e4aff";
+//   const textColor = theme === "dark" ? "#f1f5f9" : "#0f172a";
+//   const secondaryTextColor = theme === "dark" ? "#94a3b8" : "#64748b";
+
+//   const projectName =
+//     projectFromState?.name ||
+//     projectFromState?.project_name ||
+//     `Project #${id}`;
+
+//   // distinct statuses (for dropdown options)
+//   const distinctStatuses = useMemo(() => {
+//     const s = new Set();
+//     (stats?.items || []).forEach((item) => {
+//       if (item.item_status) {
+//         s.add(String(item.item_status).toLowerCase());
+//       }
+//     });
+//     return Array.from(s);
+//   }, [stats]);
+
+//   // building filter options
+ 
+
+//   // Floors list based on selected building + flatLookup
+// const floorOptions = useMemo(() => {
+//   const buildingId = globalFilters.buildingId;
+//   if (!buildingId) return [];
+
+//   const items = Array.isArray(stats?.items) ? stats.items : [];
+//   const levelsMap = new Map();
+
+//   items.forEach((it) => {
+//     const loc = it.location || {};
+//     if (!loc.flat_id) return;
+//     if (!loc.building_id || String(loc.building_id) !== String(buildingId)) return;
+
+//     const meta = flatLookup[loc.flat_id];
+//     if (!meta || !meta.levelId) return;
+
+//     if (!levelsMap.has(meta.levelId)) {
+//       levelsMap.set(meta.levelId, {
+//         id: String(meta.levelId),
+//         label: meta.levelName || `Floor #${meta.levelId}`,
+//       });
+//     }
+//   });
+
+//   return Array.from(levelsMap.values()).sort((a, b) =>
+//     String(a.label).localeCompare(String(b.label))
+//   );
+// }, [stats, globalFilters.buildingId, flatLookup]);
+//  // 👇 NEW: flats list for "Focus flat" dropdown (respecting current building filter)
+//   const flatOptions = useMemo(() => {
+//     const items = Array.isArray(stats?.items) ? stats.items : [];
+//     const map = new Map();
+
+//     items.forEach((it) => {
+//       const loc = it.location || {};
+//       const flatId = loc.flat_id;
+//       if (!flatId) return;
+
+//       // If building filter set, restrict flats to that building
+//       if (
+//         globalFilters.buildingId &&
+//         loc.building_id &&
+//         String(loc.building_id) !== String(globalFilters.buildingId)
+//       ) {
+//         return;
+//       }
+
+//       if (!map.has(flatId)) {
+//         const meta = flatLookup[flatId] || {};
+//         const baseLabel = meta.number
+//           ? `Flat ${meta.number}`
+//           : `Flat #${flatId}`;
+//         const label = meta.typeName
+//           ? `${baseLabel} • ${meta.typeName}`
+//           : baseLabel;
+//         map.set(flatId, { id: String(flatId), label });
+//       }
+//     });
+
+//     return Array.from(map.values()).sort((a, b) =>
+//       String(a.label).localeCompare(String(b.label))
+//     );
+//   }, [stats, flatLookup, globalFilters.buildingId]);
+
+//   // Floors only for Question filters (stage+building+floor+room view)
+//   const questionFloorOptions = useMemo(() => {
+//     const bId = questionFilters.buildingId;
+//     if (!bId) return [];
+
+//     const items = Array.isArray(stats?.items) ? stats.items : [];
+//     const levelsMap = new Map();
+
+//     items.forEach((it) => {
+//       const loc = it.location || {};
+//       if (!loc.flat_id) return;
+//       if (!loc.building_id || String(loc.building_id) !== String(bId)) return;
+
+//       const meta = flatLookup[loc.flat_id];
+//       if (!meta || !meta.levelId) return;
+
+//       if (!levelsMap.has(meta.levelId)) {
+//         levelsMap.set(meta.levelId, {
+//           id: String(meta.levelId),
+//           label: meta.levelName || `Floor #${meta.levelId}`,
+//         });
+//       }
+//     });
+
+//     return Array.from(levelsMap.values()).sort((a, b) =>
+//       String(a.label).localeCompare(String(b.label))
+//     );
+//   }, [stats, flatLookup, questionFilters.buildingId]);
+
+//     // flat categories – e.g. 1 BHK / 2 BHK, etc.
+//   const flatCategoryOptions = useMemo(() => {
+//     const items = Array.isArray(stats?.items) ? stats.items : [];
+//     const categories = new Set();
+
+//     items.forEach((it) => {
+//       const flatId = it.location?.flat_id;
+//       if (!flatId) return;
+//       const meta = flatLookup[flatId];
+//       const cat = meta?.typeName || null; // backend se jo bhi aa raha ho (1 BHK / 2 BHK)
+//       if (cat) categories.add(String(cat));
+//     });
+
+//     return Array.from(categories).sort();
+//   }, [stats, flatLookup]);
+
+//   // room categories – e.g. Living, Bedroom, Toilet
+//   const roomCategoryOptions = useMemo(() => {
+//     const items = Array.isArray(stats?.items) ? stats.items : [];
+//     const categories = new Set();
+
+//     items.forEach((it) => {
+//       const loc = it.location || {};
+//       const cat =
+//         loc.room_category ||
+//         loc.room_type ||
+//         loc.room ||
+//         null; // jo bhi key tum use kar rahe ho
+//       if (cat) categories.add(String(cat));
+//     });
+
+//     return Array.from(categories).sort();
+//   }, [stats]);
+
+//   // checklist category options (for question filters)
+//   const checklistCategoryOptions = useMemo(() => {
+//   const items = Array.isArray(stats?.items) ? stats.items : [];
+//   const map = new Map();
+
+//   items.forEach((it) => {
+//     const cl = it.checklist || {};
+
+//     // 1) ID for filter logic
+//     const id =
+//       cl.category_id ||
+//       cl.category ||
+//       cl.categoryId ||
+//       cl.category_id_fk ||
+//       null;
+//     if (!id) return;
+
+//     // 2) BEST possible human label
+//     const label =
+//       cl.category_name ||          // try direct field
+//       cl.category_label ||
+//       cl.category_title ||
+//       (cl.category && cl.category.name) ||
+//       cl.name ||                   // many APIs: checklist.name
+//       cl.title ||
+//       `Category #${id}`;
+
+//     const key = String(id);
+//     if (!map.has(key)) {
+//       map.set(key, String(label));
+//     }
+//   });
+
+//   return Array.from(map.entries()).map(([id, label]) => ({
+//     id,
+//     label,
+//   }));
+// }, [stats]);
+// // Map of building_id -> building name (Tower / Wing label)
+// const buildingNameMap = useMemo(() => {
+//   const map = new Map();
+
+//   // Option A: if API directly sends buildings list
+//   (stats?.buildings || []).forEach((b) => {
+//     const id = b.id || b.building_id;
+//     if (!id) return;
+//     const label =
+//       b.name ||
+//       b.title ||
+//       b.building_name ||
+//       b.code ||
+//       `Building #${id}`;
+//     map.set(String(id), String(label));
+//   });
+
+//   // Option B: derive from flats / locations (fallback)
+//   const items = Array.isArray(stats?.items) ? stats.items : [];
+//   items.forEach((it) => {
+//     const loc = it.location || {};
+//     if (!loc.building_id) return;
+
+//     const id = String(loc.building_id);
+
+//     const fromLoc =
+//       loc.building_name ||
+//       loc.building ||
+//       loc.tower_name ||
+//       loc.wing ||
+//       null;
+
+//     const fromFlat =
+//       (it.flat_meta && it.flat_meta.building_name) ||
+//       (it.flat_meta && it.flat_meta.tower_name) ||
+//       null;
+
+//     const label =
+//       fromLoc ||
+//       fromFlat ||
+//       map.get(id) ||
+//       `Building #${id}`;
+
+//     map.set(id, String(label));
+//   });
+
+//   return map;
+// }, [stats]);
+
+// const buildingOptions = useMemo(() => {
+//   return Array.from(buildingNameMap.entries()).map(([id, label]) => ({
+//     id,
+//     label,
+//   }));
+// }, [buildingNameMap]);
+
+//   // ---------- GLOBAL FILTER MECHANISM ----------
+//   const filteredItemsGlobal = useMemo(() => {
+//     const items = Array.isArray(stats?.items) ? stats.items : [];
+// const {
+//       status,
+//       role,
+//       stageId,
+//       buildingId,
+//       flatCategory,
+//       roomCategory,
+//       timeWindow,
+//     } = globalFilters;
+//         if (
+//       !status &&
+//       !role &&
+//       !stageId &&
+//       !buildingId &&
+//       !flatCategory &&
+//       !roomCategory &&
+//       timeWindow === "all"
+//     ) {
+//       return items;
+//     }
+
+
+//     const now = new Date();
+
+//     return items.filter((item) => {
+//       // status
+//       if (status) {
+//         if (
+//           String(item.item_status || "").toLowerCase() !==
+//           String(status).toLowerCase()
+//         ) {
+//           return false;
+//         }
+//       }
+
+//       // role
+//       if (role) {
+//         const rolesObj = item.roles || {};
+//         const block = rolesObj[role.toLowerCase()];
+//         if (!block || !block.user_id) return false;
+//       }
+
+//       // stage
+//       if (stageId) {
+//         const sId = item.checklist?.stage_id;
+//         if (!sId || String(sId) !== String(stageId)) return false;
+//       }
+
+//       // building
+//       if (buildingId) {
+//         const bId = item.location?.building_id;
+//         if (!bId || String(bId) !== String(buildingId)) return false;
+//       }
+//             // flat category filter (1 BHK / 2 BHK etc.)
+//       if (flatCategory) {
+//         const flatId = item.location?.flat_id;
+//         if (!flatId) return false;
+//         const meta = flatLookup[flatId];
+//         const cat = meta?.typeName || null;
+//         if (!cat || String(cat) !== String(flatCategory)) {
+//           return false;
+//         }
+//       }
+
+//       // room category filter (Living, Bedroom, Toilet etc.)
+//       if (roomCategory) {
+//         const loc = item.location || {};
+//         const cat =
+//           loc.room_category ||
+//           loc.room_type ||
+//           loc.room ||
+//           null;
+//         if (!cat || String(cat) !== String(roomCategory)) {
+//           return false;
+//         }
+//       }
+
+
+//       // time window
+//       if (timeWindow !== "all") {
+//         const latest = item.latest_submission || {};
+//         const lastTimeStr =
+//           latest.checked_at ||
+//           latest.supervised_at ||
+//           latest.maker_at ||
+//           null;
+//         if (!lastTimeStr) return false;
+//         const t = new Date(lastTimeStr);
+//         if (Number.isNaN(t.getTime())) return false;
+
+//         const diffDays = (now - t) / (1000 * 60 * 60 * 24);
+//         if (timeWindow === "30d" && diffDays > 30) return false;
+//         if (timeWindow === "7d" && diffDays > 7) return false;
+//       }
+
+//       return true;
+//     });
+//   }, [stats, globalFilters,flatLookup]);
+
+//  const [paretoFilters, setParetoFilters] = useState({
+//   categoryMode: "room", // 'room' | 'flatType' | 'checklist' | 'question'
+//   floorIds: [],         // multi-select floor ids as strings
+//   focusFlatId: [],      // optional: restrict Pareto to single flat
+// });
+
+
+//   const filtersActive = useMemo(() => {
+//     const {
+//       status,
+//       role,
+//       stageId,
+//       buildingId,
+//       flatCategory,
+//       roomCategory,
+//       timeWindow,
+//     } = globalFilters;
+//     return (
+//       !!status ||
+//       !!role ||
+//       !!stageId ||
+//       !!buildingId ||
+//       !!flatCategory ||
+//       !!roomCategory ||
+//       timeWindow !== "all"
+//     );
+//   }, [globalFilters]);
+
+//   const workingItems = useMemo(() => {
+//     if (filtersActive) {
+//       return filteredItemsGlobal;
+//     }
+//     return Array.isArray(stats?.items) ? stats.items : [];
+//   }, [stats, filteredItemsGlobal, filtersActive]);
+
+//   const rawSummary = stats?.summary || {};
+
+//   const summary = useMemo(() => {
+//     if (!workingItems || !workingItems.length) {
+//       return {
+//         total_items: 0,
+//         total_with_submission: 0,
+//         by_latest_status: {},
+//         by_stage: [],
+//         roles: {},
+//       };
+//     }
+
+//     if (!filtersActive && rawSummary && Object.keys(rawSummary).length) {
+//       return rawSummary;
+//     }
+
+//     // filters active -> recompute summary from workingItems
+//     return buildSummaryFromItems(workingItems);
+//   }, [workingItems, filtersActive, rawSummary]);
+
+//   const totalItems = safeNumber(summary.total_items);
+//   const totalWithSubmission = safeNumber(summary.total_with_submission);
+//   const byStatus = summary.by_latest_status || {};
+//   const statusKeys = Object.keys(byStatus);
+
+//   const completionRate = pct(byStatus.completed || 0, totalItems);
+//   const withSubmissionRate = pct(totalWithSubmission, totalItems);
+
+//   const roleStatsObj = summary.roles || {};
+//   const allRoleKeys = Object.keys(roleStatsObj);
+
+//   const visibleRoleKeys =
+//     viewMode === "manager"
+//       ? allRoleKeys
+//       : allRoleKeys.filter((k) => CORE_ROLES_FOR_HEAD.includes(k));
+
+//   const hasData = !!stats && !loading && !error;
+//   const numericProjectId = Number(id) || null;
+
+//   // ============ CHART DATA COMPUTATIONS ============
+// const paretoCategoryData = useMemo(() => {
+//   if (!workingItems || !workingItems.length) return [];
+
+//   const pendingKeys = [
+//     "pending_checker",
+//     "pending_for_inspector",
+//     "not_started",
+//   ];
+
+//   const selectedStageId = globalFilters.stageId || null;
+//   const selectedBuildingId = globalFilters.buildingId || null;
+//   const selectedFloorIds = paretoFilters.floorIds || [];
+//   const focusFlatId = paretoFilters.focusFlatId || "";
+//   const selectedFlatIds = paretoFilters.focusFlatIds || [];
+//   const categoryMode = paretoFilters.categoryMode || "room";
+
+//   const rowsMap = {};
+
+//   workingItems.forEach((item) => {
+//     const status = (item.item_status || "").toLowerCase();
+//     if (!pendingKeys.includes(status)) return; // sirf pending count karna hai
+
+//     // Stage filter (global)
+//     if (selectedStageId) {
+//       const sId = item.checklist?.stage_id;
+//       if (!sId || String(sId) !== String(selectedStageId)) return;
+//     }
+
+//     // Building filter (global)
+//     if (selectedBuildingId) {
+//       const bId = item.location?.building_id;
+//       if (!bId || String(bId) !== String(selectedBuildingId)) return;
+//     }
+
+//     // Floors filter (local Pareto)
+//     if (selectedFloorIds.length) {
+//       const flatId = item.location?.flat_id;
+//       if (!flatId) return;
+//       const meta = flatLookup[flatId];
+//       if (!meta || !meta.levelId) return;
+
+//       const lid = String(meta.levelId);
+//       if (!selectedFloorIds.includes(lid)) return;
+//     }
+
+//     // Focus flat filter (local Pareto) – e.g. "Flat 3" only
+//      if (selectedFlatIds.length) {
+//       const fId = item.location?.flat_id;
+//       if (!fId) return;
+//       if (!selectedFlatIds.includes(String(fId))) return;
+//     }
+
+//     const label = getParetoCategoryLabel(item, flatLookup, categoryMode);
+//     const key = label;
+
+//     let row = rowsMap[key];
+//     if (!row) {
+//       row = {
+//         categoryLabel: label,
+//         pending: 0,
+//       };
+//       rowsMap[key] = row;
+//     }
+//     row.pending += 1;
+//   });
+
+//   let rows = Object.values(rowsMap).filter((r) => r.pending > 0);
+//   if (!rows.length) return [];
+
+//   // Sort desc by pending
+//   rows.sort((a, b) => b.pending - a.pending);
+
+//   // Cumulative % (Pareto) + top 80% flag
+//   const totalPending = rows.reduce((sum, r) => sum + r.pending, 0) || 1;
+//   let running = 0;
+
+//   rows = rows.map((r) => {
+//     running += r.pending;
+//     const cumulativePct = Math.round((running / totalPending) * 100);
+//     const isTop80 = cumulativePct <= 80;
+//     const isUnmapped =
+//       typeof r.categoryLabel === "string" &&
+//       r.categoryLabel.startsWith("⚠");
+//     return {
+//       ...r,
+//       cumulativePct,
+//       isTop80,
+//       isUnmapped,
+//     };
+//   });
+
+//   return rows;
+// }, [
+//   workingItems,
+//   globalFilters.stageId,
+//   globalFilters.buildingId,
+//   paretoFilters,
+//   flatLookup,
+// ]);
+
+//   // 1. Project Health Score
+//   const projectHealthScore = useMemo(() => {
+//     if (!hasData) return 0;
+
+//     const completionWeight = completionRate * 0.4; // 40% weight
+//     const submissionWeight = withSubmissionRate * 0.3; // 30% weight
+
+//     // Rework penalty
+//     let reworkCount = 0;
+//     (workingItems || []).forEach((item) => {
+//       if (safeNumber(item.latest_submission?.attempts, 0) > 1) reworkCount++;
+//     });
+//     const reworkPenalty = totalItems > 0 ? (reworkCount / totalItems) * 20 : 0;
+
+//     // Pending work factor
+//     const pendingCount =
+//       safeNumber(byStatus.pending_checker) +
+//       safeNumber(byStatus.pending_for_inspector) +
+//       safeNumber(byStatus.not_started);
+//     const pendingFactor =
+//       totalItems > 0 ? (pendingCount / totalItems) * 30 : 0;
+
+//     const score = Math.max(
+//       0,
+//       Math.min(
+//         100,
+//         completionWeight +
+//           submissionWeight +
+//           (30 - pendingFactor) -
+//           reworkPenalty
+//       )
+//     );
+
+//     return Math.round(score);
+//   }, [
+//     hasData,
+//     completionRate,
+//     withSubmissionRate,
+//     byStatus,
+//     workingItems,
+//     totalItems,
+//   ]);
+
+//   // 2. Stage Progress Chart Data
+//   const stageProgressChartData = useMemo(() => {
+//     if (!summary.by_stage) return [];
+
+//     return summary.by_stage
+//       .map((stg) => {
+//         const stgItems = safeNumber(stg.items);
+//         const statusData = stg.by_latest_status || {};
+//         const stageLabel =
+//           stageMap[stg.stage_id] || stg.stage_name || `Stage ${stg.stage_id}`;
+
+//         return {
+//           name: stageLabel,
+//           completed: safeNumber(statusData.completed),
+//           pending_checker: safeNumber(statusData.pending_checker),
+//           pending_for_inspector: safeNumber(statusData.pending_for_inspector),
+//           not_started: safeNumber(statusData.not_started),
+//           total: stgItems,
+//           completionRate: pct(statusData.completed, stgItems),
+//         };
+//       })
+//       .sort((a, b) => b.total - a.total);
+//   }, [summary, stageMap]);
+
+//   // 3. Status Distribution Pie Chart
+//   const statusPieData = useMemo(
+//     () =>
+//       statusKeys
+//         .map((key) => ({
+//           name: titleCaseStatus(key),
+//           value: safeNumber(byStatus[key]),
+//           color: statusColor(key).chartColor,
+//         }))
+//         .filter((d) => d.value > 0),
+//     [statusKeys, byStatus]
+//   );
+
+//   // 4. Team Performance Comparison
+//   const teamPerformanceData = useMemo(() => {
+//     if (!hasData) return [];
+
+//     const userStats = {};
+
+//     (workingItems || []).forEach((item) => {
+//       const status = (item.item_status || "").toLowerCase();
+//       const rolesObj = item.roles || {};
+
+//       ["maker", "checker", "supervisor"].forEach((rk) => {
+//         const uid = rolesObj[rk]?.user_id;
+//         if (!uid) return;
+
+//         if (!userStats[uid]) {
+//           userStats[uid] = {
+//             userName: resolveUserName(uid),
+//             completed: 0,
+//             pending: 0,
+//             total: 0,
+//             efficiency: 0,
+//           };
+//         }
+
+//         userStats[uid].total += 1;
+//         if (status === "completed") {
+//           userStats[uid].completed += 1;
+//         } else {
+//           userStats[uid].pending += 1;
+//         }
+//       });
+//     });
+
+//     return Object.values(userStats)
+//       .map((u) => ({
+//         ...u,
+//         efficiency:
+//           u.total > 0 ? Math.round((u.completed / u.total) * 100) : 0,
+//       }))
+//       .sort((a, b) => b.total - a.total)
+//       .slice(0, 10);
+//   }, [workingItems, userMap, hasData]);
+
+//   // 5. Workload Distribution
+//   const workloadDistributionData = useMemo(() => {
+//     if (!visibleRoleKeys.length) return [];
+
+//     return visibleRoleKeys
+//       .map((roleKey) => {
+//         const rStats = roleStatsObj[roleKey] || {};
+//         const roleLabel = roleKey
+//           .split("_")
+//           .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+//           .join(" ");
+
+//         return {
+//           role: roleLabel,
+//           items: safeNumber(rStats.items_touched),
+//           users: safeNumber(rStats.distinct_users),
+//           avgPerUser:
+//             safeNumber(rStats.distinct_users) > 0
+//               ? Math.round(
+//                   safeNumber(rStats.items_touched) /
+//                     safeNumber(rStats.distinct_users)
+//                 )
+//               : 0,
+//         };
+//       })
+//       .filter((d) => d.items > 0);
+//   }, [visibleRoleKeys, roleStatsObj]);
+
+//   // 6. Timeline/Velocity (last 30 days)
+//   const velocityChartData = useMemo(() => {
+//     if (!workingItems || !workingItems.length) return [];
+
+//     const days = 30;
+//     const data = [];
+//     const now = new Date();
+
+//     for (let i = days - 1; i >= 0; i--) {
+//       const date = new Date(now);
+//       date.setDate(date.getDate() - i);
+
+//       let completed = 0;
+//       let started = 0;
+
+//       workingItems.forEach((item) => {
+//         const latest = item.latest_submission || {};
+//         const activityDate =
+//           latest.checked_at || latest.supervised_at || latest.maker_at;
+
+//         if (activityDate) {
+//           const actDate = new Date(activityDate);
+//           if (actDate.toDateString() === date.toDateString()) {
+//             if ((item.item_status || "").toLowerCase() === "completed") {
+//               completed++;
+//             } else {
+//               started++;
+//             }
+//           }
+//         }
+//       });
+
+//       data.push({
+//         date: `${date.getDate()}/${date.getMonth() + 1}`,
+//         completed,
+//         started,
+//         total: completed + started,
+//       });
+//     }
+
+//     return data;
+//   }, [workingItems]);
+
+//   // 7. Role Performance Radar
+//   const roleRadarData = useMemo(() => {
+//     if (!visibleRoleKeys.length) return [];
+
+//     const maxItems = Math.max(
+//       0,
+//       ...visibleRoleKeys.map((k) =>
+//         safeNumber(roleStatsObj[k]?.items_touched)
+//       )
+//     );
+
+//     return visibleRoleKeys
+//       .map((roleKey) => {
+//         const rStats = roleStatsObj[roleKey] || {};
+//         const roleLabel = roleKey.split("_")[0];
+
+//         const items = safeNumber(rStats.items_touched);
+
+//         return {
+//           role: roleLabel,
+//           coverage: maxItems > 0 ? Math.round((items / maxItems) * 100) : 0,
+//           users: safeNumber(rStats.distinct_users) * 10,
+//         };
+//       })
+//       .filter((d) => d.coverage > 0);
+//   }, [visibleRoleKeys, roleStatsObj]);
+//   // 9. Stage-wise Pareto (80/20 pending work)
+//   const paretoStageData = useMemo(() => {
+//     if (!summary.by_stage || !summary.by_stage.length) return [];
+
+//     // Step 1: stage-wise pending count banao
+//     const rows = summary.by_stage
+//       .map((stg) => {
+//         const statusData = stg.by_latest_status || {};
+//         const pending =
+//           safeNumber(statusData.pending_checker) +
+//           safeNumber(statusData.pending_for_inspector) +
+//           safeNumber(statusData.not_started);
+
+//         if (pending <= 0) return null;
+
+//         const stageLabel =
+//           stageMap[stg.stage_id] ||
+//           stg.stage_name ||
+//           `Stage #${stg.stage_id}`;
+
+//         return {
+//           stageId: stg.stage_id,
+//           stageLabel,
+//           pending,
+//         };
+//       })
+//       .filter(Boolean)
+//       .sort((a, b) => b.pending - a.pending); // descending
+
+//     if (!rows.length) return [];
+
+//     // Step 2: cumulative % nikaalo
+//     const totalPending = rows.reduce((sum, r) => sum + r.pending, 0) || 1;
+//     let running = 0;
+
+//     return rows.map((r) => {
+//       running += r.pending;
+//       const cumulativePct = Math.round((running / totalPending) * 100);
+//       return {
+//         ...r,
+//         cumulativePct,
+//       };
+//     });
+//   }, [summary, stageMap]);
+
+//   // 8. Bottleneck Identification
+//   const bottleneckData = useMemo(() => {
+//     if (!summary.by_stage) return [];
+    
+
+//     return summary.by_stage
+//       .map((stg) => {
+//         const stgItems = safeNumber(stg.items);
+//         const statusData = stg.by_latest_status || {};
+//         const stageLabel = stageMap[stg.stage_id] || `Stage #${stg.stage_id}`;
+
+//         const pending =
+//           safeNumber(statusData.pending_checker) +
+//           safeNumber(statusData.pending_for_inspector) +
+//           safeNumber(statusData.not_started);
+
+//         const bottleneckScore =
+//           stgItems > 0 ? (pending / stgItems) * 100 : 0;
+
+//         return {
+//           stage: stageLabel,
+//           pendingItems: pending,
+//           totalItems: stgItems,
+//           bottleneckScore: Math.round(bottleneckScore),
+//           isBottleneck: bottleneckScore > 50,
+//         };
+//       })
+//       .filter((d) => d.isBottleneck)
+//       .sort((a, b) => b.bottleneckScore - a.bottleneckScore);
+//   }, [summary, stageMap]);
+
+//   // ---------- existing analytics from previous version ----------
+
+//   const responsibilityMatrix = useMemo(() => {
+//     if (!workingItems || !workingItems.length) return [];
+//     const byStage = {};
+
+//     workingItems.forEach((item) => {
+//       const stageId = item.checklist?.stage_id;
+//       if (!stageId) return;
+//       if (!byStage[stageId]) {
+//         byStage[stageId] = {
+//           stageId,
+//           assignments: {
+//             INITIALIZER: {},
+//             MAKER: {},
+//             SUPERVISOR: {},
+//             CHECKER: {},
+//           },
+//         };
+//       }
+//       const rolesObj = item.roles || {};
+//       ["initializer", "maker", "supervisor", "checker"].forEach((rk) => {
+//         const block = rolesObj[rk];
+//         const uid = block?.user_id;
+//         if (!uid) return;
+//         const roleName = rk.toUpperCase();
+//         const bucket = byStage[stageId].assignments[roleName];
+//         bucket[uid] = (bucket[uid] || 0) + 1;
+//       });
+//     });
+
+//     return Object.values(byStage)
+//       .map((entry) => {
+//         const stageLabel = stageMap[entry.stageId] || `Stage #${entry.stageId}`;
+//         const roles = {};
+//         Object.entries(entry.assignments).forEach(([roleName, userCounts]) => {
+//           const arr = Object.entries(userCounts)
+//             .map(([uid, count]) => ({
+//               userId: Number(uid),
+//               userName: resolveUserName(Number(uid)),
+//               count,
+//             }))
+//             .sort((a, b) => b.count - a.count);
+//           if (arr.length) roles[roleName] = arr;
+//         });
+//         return { stageId: entry.stageId, stageLabel, roles };
+//       })
+//       .sort((a, b) => a.stageId - b.stageId);
+//   }, [workingItems, stageMap, userMap]);
+
+//   const userWorkload = useMemo(() => {
+//     if (!workingItems || !workingItems.length) return [];
+//     const map = {};
+
+//     workingItems.forEach((item) => {
+//       const status = (item.item_status || "").toLowerCase();
+//       const rolesObj = item.roles || {};
+//       ["maker", "checker", "supervisor"].forEach((rk) => {
+//         const uid = rolesObj[rk]?.user_id;
+//         if (!uid) return;
+//         const rec =
+//           map[uid] ||
+//           (map[uid] = {
+//             userId: uid,
+//             userName: resolveUserName(uid),
+//             counts: {
+//               total: 0,
+//               completed: 0,
+//               pending_checker: 0,
+//               pending_for_inspector: 0,
+//               not_started: 0,
+//               other: 0,
+//             },
+//             roles: { MAKER: 0, CHECKER: 0, SUPERVISOR: 0 },
+//             reworkItems: 0,
+//           });
+//         rec.counts.total += 1;
+//         if (status && Object.prototype.hasOwnProperty.call(rec.counts, status)) {
+//           rec.counts[status] += 1;
+//         } else {
+//           rec.counts.other += 1;
+//         }
+//         const upper = rk.toUpperCase();
+//         rec.roles[upper] = (rec.roles[upper] || 0) + 1;
+
+//         const attempts = safeNumber(item.latest_submission?.attempts, 0);
+//         if (attempts > 1) {
+//           rec.reworkItems += 1;
+//         }
+//       });
+//     });
+
+//     return Object.values(map).sort(
+//       (a, b) => b.counts.total - a.counts.total
+//     );
+//   }, [workingItems, userMap]);
+
+//   const locationHotspots = useMemo(() => {
+//     if (!workingItems || !workingItems.length) return [];
+//     const flatMap = {};
+
+//     workingItems.forEach((item) => {
+//       const flatId = item.location?.flat_id;
+//       if (!flatId) return;
+//       const status = (item.item_status || "").toLowerCase();
+//       const rec =
+//         flatMap[flatId] ||
+//         (flatMap[flatId] = {
+//           flatId,
+//           meta: flatLookup[flatId] || null,
+//           total: 0,
+//           completed: 0,
+//           pending_checker: 0,
+//           pending_for_inspector: 0,
+//           not_started: 0,
+//         });
+//       rec.total += 1;
+//       if (Object.prototype.hasOwnProperty.call(rec, status)) {
+//         rec[status] += 1;
+//       }
+//     });
+
+//     let arr = Object.values(flatMap);
+//     arr.forEach((r) => {
+//       r.openIssues =
+//         safeNumber(r.pending_checker) +
+//         safeNumber(r.pending_for_inspector) +
+//         safeNumber(r.not_started);
+//     });
+//     arr.sort((a, b) => b.openIssues - a.openIssues);
+//     return arr.slice(0, 5);
+//   }, [workingItems, flatLookup]);
+
+//   const reworkSummary = useMemo(() => {
+//     if (!workingItems || !workingItems.length) {
+//       return { totalRework: 0, byStage: [], byUser: [] };
+//     }
+//     const byStage = {};
+//     const byUser = {};
+//     let total = 0;
+
+//     workingItems.forEach((item) => {
+//       const attempts = safeNumber(item.latest_submission?.attempts, 0);
+//       if (attempts <= 1) return;
+//       total += 1;
+//       const stageId = item.checklist?.stage_id;
+//       if (stageId) {
+//         const sRec =
+//           byStage[stageId] || (byStage[stageId] = { stageId, count: 0 });
+//         sRec.count += 1;
+//       }
+//       const rolesObj = item.roles || {};
+//       ["maker", "checker"].forEach((rk) => {
+//         const uid = rolesObj[rk]?.user_id;
+//         if (!uid) return;
+//         const uRec =
+//           byUser[uid] || (byUser[uid] = { userId: uid, count: 0 });
+//         uRec.count += 1;
+//       });
+//     });
+
+//     const stageArr = Object.values(byStage)
+//       .map((r) => ({
+//         ...r,
+//         stageLabel:
+//           stageMap[r.stageId] ||
+//           (typeof r.stageId !== "undefined"
+//             ? `Stage #${r.stageId}`
+//             : "Stage"),
+//       }))
+//       .sort((a, b) => b.count - a.count)
+//       .slice(0, 5);
+
+//     const userArr = Object.values(byUser)
+//       .map((r) => ({
+//         ...r,
+//         userName: resolveUserName(r.userId),
+//       }))
+//       .sort((a, b) => b.count - a.count)
+//       .slice(0, 5);
+
+//     return { totalRework: total, byStage: stageArr, byUser: userArr };
+//   }, [workingItems, stageMap, userMap]);
+
+//   const recentActivity = useMemo(() => {
+//     if (!workingItems || !workingItems.length) return null;
+//     const now = Date.now();
+//     const days = 7;
+//     const cutoff = now - days * 24 * 60 * 60 * 1000;
+
+//     let total = 0;
+//     const counts = {
+//       completed: 0,
+//       pending_checker: 0,
+//       pending_for_inspector: 0,
+//       not_started: 0,
+//       other: 0,
+//     };
+
+//     workingItems.forEach((item) => {
+//       const latest = item.latest_submission || {};
+//       const lastTimeStr =
+//         latest.checked_at || latest.supervised_at || latest.maker_at;
+//       if (!lastTimeStr) return;
+//       const t = new Date(lastTimeStr).getTime();
+//       if (!t || Number.isNaN(t) || t < cutoff) return;
+//       total += 1;
+//       const status = (item.item_status || "").toLowerCase();
+//       if (Object.prototype.hasOwnProperty.call(counts, status)) {
+//         counts[status] += 1;
+//       } else {
+//         counts.other += 1;
+//       }
+//     });
+
+//     if (!total) return null;
+//     return { days, total, counts };
+//   }, [workingItems]);
+
+//   const projectUsersAccesses = useMemo(() => {
+//     if (!numericProjectId || !Array.isArray(users)) return [];
+//     const result = [];
+//     users.forEach((u) => {
+//       const accesses = Array.isArray(u.accesses) ? u.accesses : [];
+//       const userName =
+//         (u.first_name && u.first_name.trim()) ||
+//         (u.username && u.username.trim()) ||
+//         u.email ||
+//         `User #${u.id}`;
+//       accesses.forEach((acc) => {
+//         if (acc.project_id && acc.project_id !== numericProjectId) return;
+//         const rolesArr = Array.isArray(acc.roles) ? acc.roles : [];
+//         const roleNames = rolesArr
+//           .map((r) => (typeof r === "string" ? r : r?.role))
+//           .filter(Boolean);
+//         result.push({
+//           userId: u.id,
+//           userName,
+//           accessId: acc.id,
+//           stageId: acc.stage_id,
+//           phaseId: acc.phase_id,
+//           purposeId: acc.purpose_id,
+//           allChecklist: acc.All_checklist,
+//           roleNames,
+//         });
+//       });
+//     });
+//     return result;
+//   }, [users, numericProjectId]);
+
+//   const configAndActivity = useMemo(() => {
+//     if (!numericProjectId) {
+//       return {
+//         coverageList: [],
+//         inactiveAssignments: [],
+//         unconfiguredActivity: [],
+//       };
+//     }
+
+//     const configAssignments = {};
+//     const coverageByStage = {};
+
+//     (projectUsersAccesses || []).forEach((acc) => {
+//       const stageId = acc.stageId;
+//       if (!stageId) return;
+//       const stageRec =
+//         coverageByStage[stageId] ||
+//         (coverageByStage[stageId] = { stageId, roles: {} });
+
+//       acc.roleNames.forEach((roleNameRaw) => {
+//         const roleName = String(roleNameRaw || "").toUpperCase();
+//         if (!roleName) return;
+//         const key = `${stageId}|${roleName}|${acc.userId}`;
+//         if (!configAssignments[key]) {
+//           configAssignments[key] = {
+//             stageId,
+//             roleName,
+//             userId: acc.userId,
+//             userName: acc.userName,
+//             fromAccess: acc,
+//           };
+//         }
+//         const set =
+//           stageRec.roles[roleName] ||
+//           (stageRec.roles[roleName] = new Set());
+//         set.add(acc.userId);
+//       });
+//     });
+
+//     const actualAssignments = {};
+//     if (workingItems && workingItems.length) {
+//       workingItems.forEach((item) => {
+//         const stageId = item.checklist?.stage_id;
+//         if (!stageId) return;
+//         const rolesObj = item.roles || {};
+//         ["maker", "checker", "supervisor", "initializer"].forEach((rk) => {
+//           const uid = rolesObj[rk]?.user_id;
+//           if (!uid) return;
+//           const roleName = rk.toUpperCase();
+//           const key = `${stageId}|${roleName}|${uid}`;
+//           const rec =
+//             actualAssignments[key] ||
+//             (actualAssignments[key] = {
+//               stageId,
+//               roleName,
+//               userId: uid,
+//               count: 0,
+//             });
+//           rec.count += 1;
+//         });
+//       });
+//     }
+
+//     const inactiveAssignments = [];
+//     Object.entries(configAssignments).forEach(([key, cfg]) => {
+//       const act = actualAssignments[key];
+//       if (!act || !act.count) {
+//         inactiveAssignments.push({
+//           ...cfg,
+//           count: 0,
+//         });
+//       }
+//     });
+
+//     const unconfiguredActivity = [];
+//     Object.entries(actualAssignments).forEach(([key, act]) => {
+//       if (!configAssignments[key]) {
+//         unconfiguredActivity.push({
+//           ...act,
+//           userName: resolveUserName(act.userId),
+//         });
+//       }
+//     });
+
+//     const coverageList = Object.values(coverageByStage).map((entry) => {
+//       const stageLabel =
+//         stageMap[entry.stageId] || `Stage #${entry.stageId}`;
+//       const roles = Object.entries(entry.roles).map(([roleName, set]) => ({
+//         roleName,
+//         userCount: set.size,
+//       }));
+//       roles.sort((a, b) => b.userCount - a.userCount);
+//       return { stageId: entry.stageId, stageLabel, roles };
+//     });
+
+//     inactiveAssignments.sort((a, b) =>
+//       a.userName.localeCompare(b.userName)
+//     );
+//     unconfiguredActivity.sort((a, b) => b.count - a.count);
+
+//     return {
+//       coverageList,
+//       inactiveAssignments: inactiveAssignments.slice(0, 10),
+//       unconfiguredActivity: unconfiguredActivity.slice(0, 10),
+//     };
+//   }, [projectUsersAccesses, workingItems, stageMap, userMap, numericProjectId]);
+
+//   const configByUser = useMemo(() => {
+//     const map = {};
+//     (projectUsersAccesses || []).forEach((acc) => {
+//       const rec =
+//         map[acc.userId] ||
+//         (map[acc.userId] = {
+//           userId: acc.userId,
+//           userName: acc.userName,
+//           accesses: [],
+//         });
+//       rec.accesses.push(acc);
+//     });
+//     return Object.values(map)
+//       .filter((r) => r.accesses.length)
+//       .sort((a, b) => a.userName.localeCompare(b.userName));
+//   }, [projectUsersAccesses]);
+
+//     // Question-level stats with local filters (stage + category + building + floor + room + status)
+//   const questionStatusData = useMemo(() => {
+//     const items = Array.isArray(workingItems) ? workingItems : [];
+//     if (!items.length) return [];
+
+//     const {
+//       stageId,
+//       categoryId,
+//       buildingId,
+//       floorId,
+//       roomCategory,
+//       statusBucket,
+//     } = questionFilters;
+
+//     const filtered = items.filter((item) => {
+//       const loc = item.location || {};
+//       const cl = item.checklist || {};
+
+//       // Stage filter
+//       if (stageId) {
+//         const sId = cl.stage_id;
+//         if (!sId || String(sId) !== String(stageId)) return false;
+//       }
+
+//       // Checklist category filter
+//       if (categoryId) {
+//         const catId = cl.category_id || cl.category;
+//         if (!catId || String(catId) !== String(categoryId)) return false;
+//       }
+
+//       // Building filter
+//       if (buildingId) {
+//         const bId = loc.building_id;
+//         if (!bId || String(bId) !== String(buildingId)) return false;
+//       }
+
+//       // Floor filter (using flat → levelId mapping)
+//       if (floorId) {
+//         const flatId = loc.flat_id;
+//         if (!flatId) return false;
+//         const meta = flatLookup[flatId];
+//         if (!meta || String(meta.levelId) !== String(floorId)) return false;
+//       }
+
+//       // Room category filter
+//       if (roomCategory) {
+//         const rc =
+//           loc.room_category ||
+//           loc.room_type ||
+//           loc.room ||
+//           null;
+//         if (!rc || String(rc) !== String(roomCategory)) return false;
+//       }
+
+//       // Status bucket filter (open / closed / all)
+//       const s = (item.item_status || "").toLowerCase();
+//       if (statusBucket === "open") {
+//         if (
+//           !["pending_checker", "pending_for_inspector", "not_started"].includes(
+//             s
+//           )
+//         ) {
+//           return false;
+//         }
+//       } else if (statusBucket === "closed") {
+//         if (s !== "completed") return false;
+//       }
+
+//       return true;
+//     });
+
+//     if (!filtered.length) return [];
+
+//     const byQuestion = {};
+
+//     filtered.forEach((item) => {
+//       const key = item.item_title || `Item #${item.item_id}`;
+//       const cl = item.checklist || {};
+//       const catLabel = getParetoCategoryLabel(item, flatLookup, "checklist");
+
+//       if (!byQuestion[key]) {
+//         byQuestion[key] = {
+//           question: key,
+//           categoryLabel: null,
+//           total: 0,
+//           completed: 0,
+//           pending_checker: 0,
+//           pending_for_inspector: 0,
+//           not_started: 0,
+//           other: 0,
+//         };
+//       }
+
+//       const rec = byQuestion[key];
+
+//       if (!rec.categoryLabel && catLabel) {
+//         rec.categoryLabel = catLabel;
+//       }
+
+//       const st = (item.item_status || "").toLowerCase();
+//       rec.total += 1;
+//       if (Object.prototype.hasOwnProperty.call(rec, st)) {
+//         rec[st] += 1;
+//       } else {
+//         rec.other += 1;
+//       }
+//     });
+
+//     let list = Object.values(byQuestion);
+
+//     list.forEach((q) => {
+//       q.openCount =
+//         safeNumber(q.pending_checker) +
+//         safeNumber(q.pending_for_inspector) +
+//         safeNumber(q.not_started);
+//       q.openPct =
+//         q.total > 0 ? Math.round((q.openCount / q.total) * 100) : 0;
+//       q.completedPct =
+//         q.total > 0 ? Math.round((q.completed / q.total) * 100) : 0;
+//     });
+
+//     // Sort by open count desc, then total
+//     list.sort(
+//       (a, b) => b.openCount - a.openCount || b.total - a.total
+//     );
+
+//     // Top 15 questions for this slice
+//     return list.slice(0, 15);
+//   }, [workingItems, questionFilters, flatLookup]);
+
+
+//   // Custom Tooltip Components
+//   const CustomTooltip = ({ active, payload, label }) => {
+//     if (!active || !payload) return null;
+
+//     return (
+//       <div
+//         className="rounded-xl p-4 shadow-2xl border backdrop-blur-xl"
+//         style={{
+//           background:
+//             theme === "dark"
+//               ? "rgba(30,41,59,0.95)"
+//               : "rgba(255,255,255,0.95)",
+//           borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+//         }}
+//       >
+//         <p className="font-bold mb-2" style={{ color: textColor }}>
+//           {label}
+//         </p>
+//         {payload.map((entry, index) => (
+//           <p
+//             key={index}
+//             className="text-sm font-semibold"
+//             style={{ color: entry.color }}
+//           >
+//             {entry.name}: {entry.value}
+//           </p>
+//         ))}
+//       </div>
+//     );
+//   };
+
+//   // Health Score Color
+//   const getHealthColor = (score) => {
+//     if (score >= 80)
+//       return {
+//         color: "#10b981",
+//         label: "Excellent",
+//         bg: "rgba(16,185,129,0.1)",
+//       };
+//     if (score >= 60)
+//       return {
+//         color: "#3b82f6",
+//         label: "Good",
+//         bg: "rgba(59,130,246,0.1)",
+//       };
+//     if (score >= 40)
+//       return {
+//         color: "#f59e0b",
+//         label: "Fair",
+//         bg: "rgba(245,158,11,0.1)",
+//       };
+//     return {
+//       color: "#ef4444",
+//       label: "Needs Attention",
+//       bg: "rgba(239,68,68,0.1)",
+//     };
+//   };
+
+//   const healthInfo = getHealthColor(projectHealthScore);
+
+//   const {
+//     coverageList = [],
+//     inactiveAssignments = [],
+//     unconfiguredActivity = [],
+//   } = configAndActivity || {};
+
+//   const filteredItems = useMemo(() => {
+//     return Array.isArray(workingItems) ? workingItems : [];
+//   }, [workingItems]);
+
+
+
+//   // ⬇️ old ko hatao, ye naya version paste karo
+// const handleOpenFlatReport = (flatId, flatMeta = null) => {
+//   if (!flatId) return;
+
+//   navigate(`/projects/${id}/flat-report/${flatId}`, {
+//     state: {
+//       project: projectFromState || null,
+//       flatId,
+//       flatMeta, // 👈 flat ka number, type, level, etc.
+//       // 👇 jo global filters tumne upar use kiye hain, wo bhi pass kar dete
+//       filters: {
+//         stageId: globalFilters.stageId || "",
+//         buildingId: globalFilters.buildingId || "",
+//       },
+//     },
+//   });
+// };
+
+
+
+
+//   return (
+//     <div
+//       className="min-h-screen transition-colors duration-300"
+//       style={{
+//         background:
+//           theme === "dark"
+//             ? "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)"
+//             : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)",
+//       }}
+//     >
+//       <div className="mx-auto max-w-[1600px] px-4 md:px-8 lg:px-12 py-8 md:py-12">
+//         {/* Executive Header Card */}
+//         <div
+//           className="relative rounded-3xl overflow-hidden backdrop-blur-xl transition-all duration-500 hover:shadow-2xl mb-8"
+//           style={{
+//             backgroundColor:
+//               theme === "dark"
+//                 ? "rgba(30,41,59,0.7)"
+//                 : "rgba(255,255,255,0.9)",
+//             border: `1px solid ${
+//               theme === "dark" ? "#334155" : "#e2e8f0"
+//             }`,
+//             boxShadow:
+//               theme === "dark"
+//                 ? "0 25px 60px -15px rgba(0,0,0,0.5)"
+//                 : "0 25px 60px -15px rgba(15,23,42,0.15)",
+//           }}
+//         >
+//           <div
+//             className="absolute -top-24 -right-24 w-96 h-96 rounded-full opacity-10 blur-3xl pointer-events-none"
+//             style={{
+//               background: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
+//             }}
+//           />
+//           <div
+//             className="absolute -bottom-20 -left-20 w-80 h-80 rounded-full opacity-10 blur-3xl pointer-events-none"
+//             style={{
+//               background: "linear-gradient(135deg, #10b981, #3b82f6)",
+//             }}
+//           />
+
+//           <div className="relative z-10 p-8 md:p-10">
+//             <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+//               <div className="flex items-start gap-5 flex-1">
+//                 <button
+//                   type="button"
+//                   onClick={() => navigate("/config")}
+//                   className="mt-2 inline-flex items-center justify-center w-12 h-12 rounded-2xl border-2 font-semibold hover:scale-110 transition-all duration-300"
+//                   style={{
+//                     borderColor:
+//                       theme === "dark" ? "#475569" : "#cbd5e1",
+//                     color: textColor,
+//                     backgroundColor:
+//                       theme === "dark"
+//                         ? "rgba(15,23,42,0.6)"
+//                         : "rgba(255,255,255,0.9)",
+//                   }}
+//                 >
+//                   <span className="text-xl">←</span>
+//                 </button>
+//                 <div className="flex-1">
+//                   <div
+//                     className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full text-xs font-bold mb-4 backdrop-blur-xl"
+//                     style={{
+//                       background:
+//                         viewMode === "manager"
+//                           ? "linear-gradient(135deg, #10b981, #34d399)"
+//                           : "linear-gradient(135deg, #3b82f6, #60a5fa)",
+//                       color: "#ffffff",
+//                       boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+//                     }}
+//                   >
+//                     <span className="inline-block w-2 h-2 rounded-full bg-white animate-pulse" />
+//                     {viewMode === "manager"
+//                       ? "OVERVIEW OF PROJECT"
+//                       : "PROJECT HEAD VIEW"}
+//                   </div>
+
+//                   <h1
+//                     className="text-3xl md:text-4xl lg:text-5xl font-black tracking-tight mb-3"
+//                     style={{
+//                       color: textColor,
+//                       textShadow:
+//                         theme === "dark"
+//                           ? "0 2px 10px rgba(0,0,0,0.3)"
+//                           : "none",
+//                     }}
+//                   >
+//                     {projectName}
+//                   </h1>
+//                   <p
+//                     className="text-base md:text-lg font-medium max-w-3xl leading-relaxed"
+//                     style={{ color: secondaryTextColor }}
+//                   >
+//                     Comprehensive project analytics with real-time insights,
+//                     visual performance metrics, and strategic decision-making
+//                     data
+//                   </p>
+
+//                   {Array.isArray(projectFromState?.roles) &&
+//                     projectFromState.roles.length > 0 && (
+//                       <div className="mt-5 flex flex-wrap gap-2">
+//                         {projectFromState.roles.map((r, idx) => {
+//                           const label =
+//                             typeof r === "string" ? r : r?.role || "Role";
+//                           return (
+//                             <span
+//                               key={idx}
+//                               className="px-4 py-2 rounded-full text-xs font-bold backdrop-blur-xl"
+//                               style={{
+//                                 background:
+//                                   theme === "dark"
+//                                     ? "rgba(51,65,85,0.8)"
+//                                     : "rgba(241,245,249,0.9)",
+//                                 color: textColor,
+//                                 border: `1px solid ${
+//                                   theme === "dark"
+//                                     ? "#475569"
+//                                     : "#cbd5e1"
+//                                 }`,
+//                               }}
+//                             >
+//                               {label}
+//                             </span>
+//                           );
+//                         })}
+//                       </div>
+//                     )}
+//                 </div>
+//               </div>
+
+//               {hasData && (
+//                 <div className="flex flex-col items-end gap-4">
+//                   <div className="text-right">
+//                     <div
+//                       className="text-xs font-bold uppercase tracking-wider mb-2"
+//                       style={{ color: secondaryTextColor }}
+//                     >
+//                       Completion Rate
+//                     </div>
+//                     <div
+//                       className="text-6xl font-black mb-3"
+//                       style={{
+//                         background:
+//                           "linear-gradient(135deg, #10b981, #34d399)",
+//                         WebkitBackgroundClip: "text",
+//                         WebkitTextFillColor: "transparent",
+//                         backgroundClip: "text",
+//                       }}
+//                     >
+//                       {completionRate}%
+//                     </div>
+//                   </div>
+//                   <div className="w-56 h-3 rounded-full bg-black/10 overflow-hidden backdrop-blur-xl">
+//                     <div
+//                       className="h-full rounded-full transition-all duration-1000"
+//                       style={{
+//                         width: `${completionRate}%`,
+//                         background:
+//                           "linear-gradient(90deg, #10b981, #34d399, #6ee7b7)",
+//                       }}
+//                     />
+//                   </div>
+//                 </div>
+//               )}
+//             </div>
+//           </div>
+//         </div>
+
+//         {loading && (
+//           <div className="py-24 flex flex-col items-center justify-center">
+//             <div className="relative mb-6">
+//               <div
+//                 className="w-20 h-20 rounded-full border-4 border-t-transparent animate-spin"
+//                 style={{
+//                   borderColor:
+//                     theme === "dark" ? "#475569" : "#cbd5e1",
+//                   borderTopColor: "transparent",
+//                 }}
+//               />
+//               <div
+//                 className="absolute inset-3 rounded-full border-2 border-dashed animate-ping"
+//                 style={{
+//                   borderColor:
+//                     theme === "dark" ? "#64748b" : "#94a3b8",
+//                 }}
+//               />
+//             </div>
+//             <p
+//               className="text-lg font-bold opacity-80"
+//               style={{ color: textColor }}
+//             >
+//               Loading Executive Dashboard...
+//             </p>
+//           </div>
+//         )}
+
+//         {!loading && error && (
+//           <div
+//             className="rounded-3xl border-2 px-8 py-8 flex items-start gap-5 backdrop-blur-xl"
+//             style={{
+//               borderColor: "rgba(248,113,113,0.5)",
+//               background:
+//                 theme === "dark"
+//                   ? "rgba(127,29,29,0.3)"
+//                   : "rgba(254,226,226,0.95)",
+//             }}
+//           >
+//             <div
+//               className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-black"
+//               style={{
+//                 backgroundColor: "rgba(248,113,113,0.2)",
+//                 color: "#b91c1c",
+//               }}
+//             >
+//               !
+//             </div>
+//             <div>
+//               <div
+//                 className="font-black text-xl mb-2"
+//                 style={{ color: textColor }}
+//               >
+//                 Unable to Load Dashboard
+//               </div>
+//               <div className="text-base opacity-80">{error}</div>
+//             </div>
+//           </div>
+//         )}
+
+//         {hasData && (
+//           <div className="space-y-8">
+//             {/* PROJECT HEALTH SCORE + QUICK STATS */}
+//             <div className="grid gap-6 lg:grid-cols-3">
+//               <div
+//                 className="lg:col-span-1 rounded-3xl border-2 p-8 backdrop-blur-xl relative overflow-hidden"
+//                 style={{
+//                   background:
+//                     theme === "dark"
+//                       ? "linear-gradient(135deg, rgba(30,41,59,0.8), rgba(51,65,85,0.6))"
+//                       : "linear-gradient(135deg, rgba(255,255,255,0.95), rgba(241,245,249,0.9))",
+//                   borderColor: healthInfo.color,
+//                   boxShadow: `0 10px 40px ${healthInfo.color}40`,
+//                 }}
+//               >
+//                 <div
+//                   className="absolute inset-0 opacity-5"
+//                   style={{ background: healthInfo.color }}
+//                 />
+//                 <div className="relative z-10">
+//                   <div
+//                     className="text-xs font-bold uppercase tracking-wider mb-3"
+//                     style={{ color: secondaryTextColor }}
+//                   >
+//                     Project Health Score
+//                   </div>
+//                   <div className="flex items-end gap-4 mb-6">
+//                     <div
+//                       className="text-7xl font-black"
+//                       style={{ color: healthInfo.color }}
+//                     >
+//                       {projectHealthScore}
+//                     </div>
+//                     <div className="pb-3">
+//                       <div
+//                         className="text-2xl font-black mb-1"
+//                         style={{ color: healthInfo.color }}
+//                       >
+//                         /100
+//                       </div>
+//                       <div
+//                         className="text-sm font-bold px-3 py-1 rounded-full"
+//                         style={{
+//                           background: healthInfo.bg,
+//                           color: healthInfo.color,
+//                         }}
+//                       >
+//                         {healthInfo.label}
+//                       </div>
+//                     </div>
+//                   </div>
+//                   <div className="w-full h-3 rounded-full bg-black/10 overflow-hidden mb-4">
+//                     <div
+//                       className="h-full rounded-full transition-all duration-1000"
+//                       style={{
+//                         width: `${projectHealthScore}%`,
+//                         background: healthInfo.color,
+//                       }}
+//                     />
+//                   </div>
+//                   <div
+//                     className="text-xs font-semibold space-y-2"
+//                     style={{ color: secondaryTextColor }}
+//                   >
+//                     <div className="flex justify-between">
+//                       <span>Completion Impact:</span>
+//                       <span style={{ color: textColor }}>40%</span>
+//                     </div>
+//                     <div className="flex justify-between">
+//                       <span>Submission Rate:</span>
+//                       <span style={{ color: textColor }}>30%</span>
+//                     </div>
+//                     <div className="flex justify-between">
+//                       <span>Pending Work:</span>
+//                       <span style={{ color: textColor }}>30%</span>
+//                     </div>
+//                   </div>
+//                 </div>
+//               </div>
+
+//               {/* Quick Stats */}
+//               <div className="lg:col-span-2 grid gap-4 md:grid-cols-2">
+//                 <div
+//                   className="rounded-3xl border p-6 backdrop-blur-xl hover:shadow-xl transition-all duration-300"
+//                   style={{
+//                     background:
+//                       theme === "dark"
+//                         ? "rgba(30,41,59,0.6)"
+//                         : "rgba(255,255,255,0.95)",
+//                     borderColor:
+//                       theme === "dark" ? "#475569" : "#cbd5e1",
+//                   }}
+//                 >
+//                   <div
+//                     className="text-xs font-bold uppercase tracking-wider mb-2"
+//                     style={{ color: secondaryTextColor }}
+//                   >
+//                     Total Items
+//                   </div>
+//                   <div
+//                     className="text-4xl font-black mb-2"
+//                     style={{ color: textColor }}
+//                   >
+//                     {fmtInt(totalItems)}
+//                   </div>
+//                   <div
+//                     className="text-sm font-semibold"
+//                     style={{ color: secondaryTextColor }}
+//                   >
+//                     Across all stages &amp; locations (after filters)
+//                   </div>
+//                 </div>
+
+//                 <div
+//                   className="rounded-3xl border p-6 backdrop-blur-xl hover:shadow-xl transition-all duration-300"
+//                   style={{
+//                     background:
+//                       theme === "dark"
+//                         ? "linear-gradient(135deg, #064e3b, #065f46)"
+//                         : "linear-gradient(135deg, #d1fae5, #a7f3d0)",
+//                     borderColor:
+//                       theme === "dark" ? "#059669" : "#10b981",
+//                   }}
+//                 >
+//                   <div className="flex justify-between items-center mb-2">
+//                     <div
+//                       className="text-xs font-bold uppercase tracking-wider"
+//                       style={{
+//                         color:
+//                           theme === "dark" ? "#6ee7b7" : "#065f46",
+//                       }}
+//                     >
+//                       With Submission
+//                     </div>
+//                     <div className="text-xs font-black px-3 py-1 rounded-full bg-white/20">
+//                       {withSubmissionRate}%
+//                     </div>
+//                   </div>
+//                   <div
+//                     className="text-4xl font-black mb-3"
+//                     style={{
+//                       color:
+//                         theme === "dark" ? "#d1fae5" : "#065f46",
+//                     }}
+//                   >
+//                     {fmtInt(totalWithSubmission)}
+//                   </div>
+//                   <div className="w-full h-2 rounded-full bg-black/20 overflow-hidden">
+//                     <div
+//                       className="h-full rounded-full transition-all duration-1000"
+//                       style={{
+//                         width: `${withSubmissionRate}%`,
+//                         background:
+//                           "linear-gradient(90deg, #10b981, #34d399)",
+//                       }}
+//                     />
+//                   </div>
+//                 </div>
+
+//                 <div
+//                   className="rounded-3xl border p-6 backdrop-blur-xl hover:shadow-xl transition-all duration-300"
+//                   style={{
+//                     background:
+//                       theme === "dark"
+//                         ? "linear-gradient(135deg, #1e3a8a, #1e40af)"
+//                         : "linear-gradient(135deg, #dbeafe, #bfdbfe)",
+//                     borderColor:
+//                       theme === "dark" ? "#3b82f6" : "#60a5fa",
+//                   }}
+//                 >
+//                   <div
+//                     className="text-xs font-bold uppercase tracking-wider mb-2"
+//                     style={{
+//                       color:
+//                         theme === "dark" ? "#93c5fd" : "#1e40af",
+//                     }}
+//                   >
+//                     Pending Checker
+//                   </div>
+//                   <div
+//                     className="text-4xl font-black"
+//                     style={{
+//                       color:
+//                         theme === "dark" ? "#dbeafe" : "#1e40af",
+//                     }}
+//                   >
+//                     {fmtInt(byStatus.pending_checker || 0)}
+//                   </div>
+//                 </div>
+
+//                 <div
+//                   className="rounded-3xl border p-6 backdrop-blur-xl hover:shadow-xl transition-all duration-300"
+//                   style={{
+//                     background:
+//                       theme === "dark"
+//                         ? "linear-gradient(135deg, #92400e, #b45309)"
+//                         : "linear-gradient(135deg, #fed7aa, #fdba74)",
+//                     borderColor:
+//                       theme === "dark" ? "#f97316" : "#fb923c",
+//                   }}
+//                 >
+//                   <div
+//                     className="text-xs font-bold uppercase tracking-wider mb-2"
+//                     style={{
+//                       color:
+//                         theme === "dark" ? "#fcd34d" : "#92400e",
+//                     }}
+//                   >
+//                     Pending Inspector
+//                   </div>
+//                   <div
+//                     className="text-4xl font-black"
+//                     style={{
+//                       color:
+//                         theme === "dark" ? "#fed7aa" : "#92400e",
+//                     }}
+//                   >
+//                     {fmtInt(byStatus.pending_for_inspector || 0)}
+//                   </div>
+//                 </div>
+//               </div>
+//             </div>
+
+//             {/* GLOBAL FILTERS BAR – applies to the whole page */}
+//             <div
+//               className="mt-2 rounded-3xl border px-4 py-3 md:px-6 md:py-4 backdrop-blur-xl"
+//               style={{
+//                 background:
+//                   theme === "dark"
+//                     ? "rgba(15,23,42,0.85)"
+//                     : "rgba(255,255,255,0.95)",
+//                 borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+//               }}
+//             >
+//               <div className="flex flex-wrap gap-3 items-center justify-between">
+//                 <div>
+//                   <div
+//                     className="text-xs font-bold uppercase tracking-wider mb-1"
+//                     style={{ color: secondaryTextColor }}
+//                   >
+//                     Global Filters
+//                   </div>
+//                   <div
+//                     className="text-[11px] font-semibold"
+//                     style={{ color: secondaryTextColor }}
+//                   >
+//                     In filters se niche ke sab charts, cards aur tables ka data
+//                     change hota hai.
+//                   </div>
+//                 </div>
+
+//                 <div className="flex flex-wrap gap-3">
+//                   {/* Status */}
+//                   <div className="min-w-[160px]">
+//                     <label
+//                       className="text-[11px] font-semibold block mb-1"
+//                       style={{ color: secondaryTextColor }}
+//                     >
+//                       Status
+//                     </label>
+//                     <select
+//                       value={globalFilters.status}
+//                       onChange={(e) =>
+//                         setGlobalFilters((prev) => ({
+//                           ...prev,
+//                           status: e.target.value,
+//                         }))
+//                       }
+//                       className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                       style={{
+//                         borderColor:
+//                           theme === "dark" ? "#475569" : "#cbd5e1",
+//                         background:
+//                           theme === "dark"
+//                             ? "rgba(15,23,42,0.9)"
+//                             : "rgba(248,250,252,0.95)",
+//                         color: textColor,
+//                       }}
+//                     >
+//                       <option value="">All statuses</option>
+//                       {distinctStatuses.map((s) => (
+//                         <option key={s} value={s}>
+//                           {titleCaseStatus(s)}
+//                         </option>
+//                       ))}
+//                     </select>
+//                   </div>
+
+//                   {/* Role */}
+//                   <div className="min-w-[150px]">
+//                     <label
+//                       className="text-[11px] font-semibold block mb-1"
+//                       style={{ color: secondaryTextColor }}
+//                     >
+//                       Role touch
+//                     </label>
+//                     <select
+//                       value={globalFilters.role}
+//                       onChange={(e) =>
+//                         setGlobalFilters((prev) => ({
+//                           ...prev,
+//                           role: e.target.value,
+//                         }))
+//                       }
+//                       className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                       style={{
+//                         borderColor:
+//                           theme === "dark" ? "#475569" : "#cbd5e1",
+//                         background:
+//                           theme === "dark"
+//                             ? "rgba(15,23,42,0.9)"
+//                             : "rgba(248,250,252,0.95)",
+//                         color: textColor,
+//                       }}
+//                     >
+//                       <option value="">All roles</option>
+//                       <option value="maker">Maker</option>
+//                       <option value="supervisor">Supervisor</option>
+//                       <option value="checker">Checker</option>
+//                     </select>
+//                   </div>
+
+//                   {/* Stage */}
+//                   <div className="min-w-[180px]">
+//                     <label
+//                       className="text-[11px] font-semibold block mb-1"
+//                       style={{ color: secondaryTextColor }}
+//                     >
+//                       Stage
+//                     </label>
+//                     <select
+//                       value={globalFilters.stageId}
+//                       onChange={(e) =>
+//                         setGlobalFilters((prev) => ({
+//                           ...prev,
+//                           stageId: e.target.value,
+//                         }))
+//                       }
+//                       className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                       style={{
+//                         borderColor:
+//                           theme === "dark" ? "#475569" : "#cbd5e1",
+//                         background:
+//                           theme === "dark"
+//                             ? "rgba(15,23,42,0.9)"
+//                             : "rgba(248,250,252,0.95)",
+//                         color: textColor,
+//                       }}
+//                     >
+//                       <option value="">All stages</option>
+//                       {Object.entries(stageMap).map(([sid, label]) => (
+//                         <option key={sid} value={sid}>
+//                           {label}
+//                         </option>
+//                       ))}
+//                     </select>
+//                   </div>
+//                                     {/* Flat category (1 BHK / 2 BHK etc.) */}
+//                   {flatCategoryOptions.length > 0 && (
+//                     <div className="min-w-[180px]">
+//                       <label
+//                         className="text-[11px] font-semibold block mb-1"
+//                         style={{ color: secondaryTextColor }}
+//                       >
+//                         Flat category
+//                       </label>
+//                       <select
+//                         value={globalFilters.flatCategory}
+//                         onChange={(e) =>
+//                           setGlobalFilters((prev) => ({
+//                             ...prev,
+//                             flatCategory: e.target.value,
+//                           }))
+//                         }
+//                         className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                         style={{
+//                           borderColor:
+//                             theme === "dark" ? "#475569" : "#cbd5e1",
+//                           background:
+//                             theme === "dark"
+//                               ? "rgba(15,23,42,0.9)"
+//                               : "rgba(248,250,252,0.95)",
+//                           color: textColor,
+//                         }}
+//                       >
+//                         <option value="">All Flat Categories</option>
+//                         {flatCategoryOptions.map((cat) => (
+//                           <option key={cat} value={cat}>
+//                             {cat}
+//                           </option>
+//                         ))}
+//                       </select>
+//                     </div>
+//                   )}
+
+//                   {/* Room category (Living, Bedroom, Toilet etc.) */}
+//                   {roomCategoryOptions.length > 0 && (
+//                     <div className="min-w-[180px]">
+//                       <label
+//                         className="text-[11px] font-semibold block mb-1"
+//                         style={{ color: secondaryTextColor }}
+//                       >
+//                         Room category
+//                       </label>
+//                       <select
+//                         value={globalFilters.roomCategory}
+//                         onChange={(e) =>
+//                           setGlobalFilters((prev) => ({
+//                             ...prev,
+//                             roomCategory: e.target.value,
+//                           }))
+//                         }
+//                         className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                         style={{
+//                           borderColor:
+//                             theme === "dark" ? "#475569" : "#cbd5e1",
+//                           background:
+//                             theme === "dark"
+//                               ? "rgba(15,23,42,0.9)"
+//                               : "rgba(248,250,252,0.95)",
+//                           color: textColor,
+//                         }}
+//                       >
+//                         <option value="">All rooms</option>
+//                         {roomCategoryOptions.map((cat) => (
+//                           <option key={cat} value={cat}>
+//                             {cat}
+//                           </option>
+//                         ))}
+//                       </select>
+//                     </div>
+//                   )}
+
+
+//                   {/* Building */}
+//                   {buildingOptions.length > 0 && (
+//                     <div className="min-w-[180px]">
+//                       <label
+//                         className="text-[11px] font-semibold block mb-1"
+//                         style={{ color: secondaryTextColor }}
+//                       >
+//                         Building
+//                       </label>
+//                       <select
+//                         value={globalFilters.buildingId}
+//                         onChange={(e) =>
+//                           setGlobalFilters((prev) => ({
+//                             ...prev,
+//                             buildingId: e.target.value,
+//                           }))
+//                         }
+//                         className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                         style={{
+//                           borderColor:
+//                             theme === "dark" ? "#475569" : "#cbd5e1",
+//                           background:
+//                             theme === "dark"
+//                               ? "rgba(15,23,42,0.9)"
+//                               : "rgba(248,250,252,0.95)",
+//                           color: textColor,
+//                         }}
+//                       >
+//                         <option value="">All buildings</option>
+//                         {buildingOptions.map((b) => (
+//                           <option key={b.id} value={b.id}>
+//                             {b.label}
+//                           </option>
+//                         ))}
+//                       </select>
+//                     </div>
+//                   )}
+
+//                   {/* Time window */}
+//                   <div className="min-w-[160px]">
+//                     <label
+//                       className="text-[11px] font-semibold block mb-1"
+//                       style={{ color: secondaryTextColor }}
+//                     >
+//                       Time window
+//                     </label>
+//                     <select
+//                       value={globalFilters.timeWindow}
+//                       onChange={(e) =>
+//                         setGlobalFilters((prev) => ({
+//                           ...prev,
+//                           timeWindow: e.target.value,
+//                         }))
+//                       }
+//                       className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                       style={{
+//                         borderColor:
+//                           theme === "dark" ? "#475569" : "#cbd5e1",
+//                         background:
+//                           theme === "dark"
+//                             ? "rgba(15,23,42,0.9)"
+//                             : "rgba(248,250,252,0.95)",
+//                         color: textColor,
+//                       }}
+//                     >
+//                       <option value="all">All time</option>
+//                       <option value="30d">Last 30 days</option>
+//                       <option value="7d">Last 7 days</option>
+//                     </select>
+//                   </div>
+
+//                   {/* Clear */}
+//                   <button
+//                     type="button"
+//                     onClick={() =>
+//                       setGlobalFilters({
+//                         status: "",
+//                         role: "",
+//                         stageId: "",
+//                         buildingId: "",
+//                         flatCategory: "",
+//                         roomCategory: "",
+//                         timeWindow: "all",
+//                       })
+//                     }
+//                     className="px-3 py-2 rounded-xl text-xs font-bold border"
+//                     style={{
+//                       borderColor:
+//                         theme === "dark" ? "#64748b" : "#cbd5e1",
+//                       background:
+//                         theme === "dark"
+//                           ? "rgba(15,23,42,0.9)"
+//                           : "rgba(248,250,252,0.95)",
+//                       color: secondaryTextColor,
+//                     }}
+//                   >
+//                     Clear
+//                   </button>
+//                 </div>
+//               </div>
+//             </div>
+
+//             {/* VISUAL ANALYTICS GRID */}
+//             <div className="grid gap-6 lg:grid-cols-2">
+//               {/* Stage Progress Chart */}
+//               {stageProgressChartData.length > 0 && (
+//                 <div
+//                   className="rounded-3xl border p-6 backdrop-blur-xl"
+//                   style={{
+//                     background:
+//                       theme === "dark"
+//                         ? "rgba(30,41,59,0.8)"
+//                         : "rgba(255,255,255,0.98)",
+//                     borderColor:
+//                       theme === "dark" ? "#475569" : "#cbd5e1",
+//                   }}
+//                 >
+//                   <h3
+//                     className="text-xl font-black mb-4"
+//                     style={{ color: textColor }}
+//                   >
+//                     📊 Stage-wise Progress
+//                   </h3>
+//                   <ResponsiveContainer width="100%" height={300}>
+//                     <BarChart
+//                       data={stageProgressChartData}
+//                       layout="vertical"
+//                     >
+//                       <CartesianGrid
+//                         strokeDasharray="3 3"
+//                         stroke={
+//                           theme === "dark" ? "#334155" : "#e2e8f0"
+//                         }
+//                       />
+//                       <XAxis
+//                         type="number"
+//                         stroke={secondaryTextColor}
+//                       />
+//                       <YAxis
+//                         dataKey="name"
+//                         type="category"
+//                         width={100}
+//                         stroke={secondaryTextColor}
+//                         style={{ fontSize: "11px" }}
+//                       />
+//                       <Tooltip content={<CustomTooltip />} />
+//                       <Legend />
+//                       <Bar
+//                         dataKey="completed"
+//                         stackId="a"
+//                         fill={CHART_COLORS.success}
+//                         name="Completed"
+//                       />
+//                       <Bar
+//                         dataKey="pending_checker"
+//                         stackId="a"
+//                         fill={CHART_COLORS.secondary}
+//                         name="Pending Checker"
+//                       />
+//                       <Bar
+//                         dataKey="pending_for_inspector"
+//                         stackId="a"
+//                         fill={CHART_COLORS.warning}
+//                         name="Pending Inspector"
+//                       />
+//                       <Bar
+//                         dataKey="not_started"
+//                         stackId="a"
+//                         fill={CHART_COLORS.danger}
+//                         name="Not Started"
+//                       />
+//                     </BarChart>
+//                   </ResponsiveContainer>
+//                 </div>
+//               )}
+//             {/* Stage-wise Pareto – 80/20 pending analysis */}
+//           {paretoCategoryData.length > 0 && (
+//   <div
+//     className="rounded-3xl border p-6 backdrop-blur-xl"
+//     style={{
+//       background:
+//         theme === "dark"
+//           ? "rgba(30,41,59,0.9)"
+//           : "rgba(255,255,255,0.98)",
+//       borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+//     }}
+//   >
+//     <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+//       <div>
+//         <h3
+//           className="text-xl font-black flex items-center gap-2"
+//           style={{ color: textColor }}
+//         >
+//           📌 Pareto – Category 80/20 (Deep)
+//         </h3>
+//         {/* <p
+//           className="text-[11px] font-semibold"
+//           style={{ color: secondaryTextColor }}
+//         >
+//           Stage + Building filter upar Global Filters se aayega. Yaha se
+//           floors aur category dimension choose karke dekh sakte ho kaun
+//           se category me pending ka 80% load aa raha hai.
+//         </p> */}
+//       </div>
+
+//       {/* Category dimension select */}
+//             <div className="flex flex-wrap gap-3">
+//         {/* Category dimension select */}
+//         <div className="min-w-[180px]">
+//           <label
+//             className="text-[11px] font-semibold block mb-1"
+//             style={{ color: secondaryTextColor }}
+//           >
+//             Category dimension
+//           </label>
+//           <select
+//             value={paretoFilters.categoryMode}
+//             onChange={(e) =>
+//               setParetoFilters((prev) => ({
+//                 ...prev,
+//                 categoryMode: e.target.value,
+//               }))
+//             }
+//             className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//             style={{
+//               borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+//               background:
+//                 theme === "dark"
+//                   ? "rgba(15,23,42,0.9)"
+//                   : "rgba(248,250,252,0.95)",
+//               color: textColor,
+//             }}
+//           >
+//             {PARETO_CATEGORY_MODES.map((m) => (
+//               <option key={m.value} value={m.value}>
+//                 {m.label}
+//               </option>
+//             ))}
+//           </select>
+//         </div>
+
+//         {/* Floors (multi-select) – only when building selected */}
+//         {globalFilters.buildingId && floorOptions.length > 0 && (
+//           <div className="min-w-[220px]">
+//             <label
+//               className="text-[11px] font-semibold block mb-1"
+//               style={{ color: secondaryTextColor }}
+//             >
+//               Floors (multi-select)
+//             </label>
+//             <select
+//               multiple
+//               value={paretoFilters.floorIds}
+//               onChange={(e) => {
+//                 const selected = Array.from(
+//                   e.target.selectedOptions
+//                 ).map((opt) => opt.value);
+//                 setParetoFilters((prev) => ({
+//                   ...prev,
+//                   floorIds: selected,
+//                 }));
+//               }}
+//               className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//               style={{
+//                 borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+//                 background:
+//                   theme === "dark"
+//                     ? "rgba(15,23,42,0.9)"
+//                     : "rgba(248,250,252,0.95)",
+//                 color: textColor,
+//                 minHeight: "70px",
+//               }}
+//             >
+//               {floorOptions.map((f) => (
+//                 <option key={f.id} value={f.id}>
+//                   {f.label}
+//                 </option>
+//               ))}
+//             </select>
+//             <p
+//               className="text-[10px] mt-1"
+//               style={{ color: secondaryTextColor }}
+//             >
+//               Windows: Ctrl + Click, Mac: ⌘ + Click for multiple floors
+//             </p>
+//           </div>
+//         )}
+
+//         {/* Focus Flat (optional) – yaha se tu "Flat 3" choose karega */}
+//         {flatOptions.length > 0 && (
+//   <div className="min-w-[220px]">
+//     <label
+//       className="text-[11px] font-semibold block mb-1"
+//       style={{ color: secondaryTextColor }}
+//     >
+//       Focus flats (multi-select)
+//     </label>
+//     <select
+//       multiple
+//       value={paretoFilters.focusFlatIds}
+//       onChange={(e) => {
+//         const selected = Array.from(e.target.selectedOptions).map(
+//           (opt) => opt.value
+//         );
+//         setParetoFilters((prev) => ({
+//           ...prev,
+//           focusFlatIds: selected,
+//         }));
+//       }}
+//       className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//       style={{
+//         borderColor:
+//           theme === "dark" ? "#475569" : "#cbd5e1",
+//         background:
+//           theme === "dark"
+//             ? "rgba(15,23,42,0.9)"
+//             : "rgba(248,250,252,0.95)",
+//         color: textColor,
+//         minHeight: "70px",
+//       }}
+//     >
+//       {flatOptions.map((f) => (
+//         <option key={f.id} value={f.id}>
+//           {f.label}
+//         </option>
+//       ))}
+//     </select>
+//     <p
+//       className="text-[10px] mt-1"
+//       style={{ color: secondaryTextColor }}
+//     >
+//       Windows: Ctrl + Click, Mac: ⌘ + Click for multiple flats
+//     </p>
+//   </div>
+// )}
+
+//       </div>
+
+//     </div>
+
+//     {paretoCategoryData.length === 0 ? (
+//       <div
+//         className="mt-4 text-xs font-semibold"
+//         style={{ color: secondaryTextColor }}
+//       >
+//         No pending items for current filters.
+//       </div>
+//     ) : (
+//       <ResponsiveContainer width="100%" height={320}>
+//         <ComposedChart data={paretoCategoryData}>
+//           <CartesianGrid
+//             strokeDasharray="3 3"
+//             stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
+//           />
+//           <XAxis
+//             dataKey="categoryLabel"
+//             stroke={secondaryTextColor}
+//             angle={-35}
+//             textAnchor="end"
+//             height={80}
+//             style={{ fontSize: "11px" }}
+//           />
+//           {/* Left Y-axis -> Pending count */}
+//           <YAxis
+//             yAxisId="left"
+//             stroke={secondaryTextColor}
+//             width={50}
+//           />
+//           {/* Right Y-axis -> Cumulative % */}
+//           <YAxis
+//             yAxisId="right"
+//             orientation="right"
+//             stroke={secondaryTextColor}
+//             domain={[0, 100]}
+//             tickFormatter={(v) => `${v}%`}
+//             width={40}
+//           />
+//           <Tooltip content={<CustomTooltip />} />
+//           <Legend />
+//           {/* Bars: pending items */}
+//                     {/* Bars: pending items – top 80% ko red, baaki grey */}
+//           <Bar
+//             yAxisId="left"
+//             dataKey="pending"
+//             name="Pending Items"
+//           >
+//             {paretoCategoryData.map((entry, index) => (
+//               <Cell
+//                 key={`bar-${index}`}
+//                 fill={
+//                   entry.isTop80
+//                     ? CHART_COLORS.danger // top 80% load
+//                     : "#9ca3af"          // remaining 20% muted
+//                 }
+//               />
+//             ))}
+//           </Bar>
+
+//           {/* Line: cumulative percentage */}
+//           <Line
+//             yAxisId="right"
+//             type="monotone"
+//             dataKey="cumulativePct"
+//             name="Cumulative %"
+//             stroke={CHART_COLORS.secondary}
+//             strokeWidth={2}
+//             dot={false}
+//           />
+
+//         </ComposedChart>
+//       </ResponsiveContainer>
+//     )}
+//   </div>
+// )}
+
+
+//               {/* Status Distribution Pie */}
+//               {statusPieData.length > 0 && (
+//                 <div
+//                   className="rounded-3xl border p-6 backdrop-blur-xl"
+//                   style={{
+//                     background:
+//                       theme === "dark"
+//                         ? "rgba(30,41,59,0.8)"
+//                         : "rgba(255,255,255,0.98)",
+//                     borderColor:
+//                       theme === "dark" ? "#475569" : "#cbd5e1",
+//                   }}
+//                 >
+//                   <h3
+//                     className="text-xl font-black mb-4"
+//                     style={{ color: textColor }}
+//                   >
+//                     🎯 Status Distribution
+//                   </h3>
+//                   <ResponsiveContainer width="100%" height={300}>
+//                     <PieChart>
+//                       <Pie
+//                         data={statusPieData}
+//                         cx="50%"
+//                         cy="50%"
+//                         labelLine={false}
+//                         label={({ name, percent }) =>
+//                           `${name}: ${(percent * 100).toFixed(0)}%`
+//                         }
+//                         outerRadius={100}
+//                         fill="#8884d8"
+//                         dataKey="value"
+//                       >
+//                         {statusPieData.map((entry, index) => (
+//                           <Cell
+//                             key={`cell-${index}`}
+//                             fill={entry.color}
+//                           />
+//                         ))}
+//                       </Pie>
+//                       <Tooltip content={<CustomTooltip />} />
+//                     </PieChart>
+//                   </ResponsiveContainer>
+//                 </div>
+//               )}
+//             </div>
+
+//             {/* Team Performance & Workload */}
+//             <div className="grid gap-6 lg:grid-cols-2">
+//               {/* Team Performance */}
+//               {teamPerformanceData.length > 0 && (
+//                 <div
+//                   className="rounded-3xl border p-6 backdrop-blur-xl"
+//                   style={{
+//                     background:
+//                       theme === "dark"
+//                         ? "rgba(30,41,59,0.8)"
+//                         : "rgba(255,255,255,0.98)",
+//                     borderColor:
+//                       theme === "dark" ? "#475569" : "#cbd5e1",
+//                   }}
+//                 >
+//                   <h3
+//                     className="text-xl font-black mb-4"
+//                     style={{ color: textColor }}
+//                   >
+//                     👥 Top Team Performance
+//                   </h3>
+//                   <ResponsiveContainer width="100%" height={300}>
+//                     <BarChart data={teamPerformanceData}>
+//                       <CartesianGrid
+//                         strokeDasharray="3 3"
+//                         stroke={
+//                           theme === "dark" ? "#334155" : "#e2e8f0"
+//                         }
+//                       />
+//                       <XAxis
+//                         dataKey="userName"
+//                         stroke={secondaryTextColor}
+//                         angle={-45}
+//                         textAnchor="end"
+//                         height={100}
+//                         style={{ fontSize: "10px" }}
+//                       />
+//                       <YAxis stroke={secondaryTextColor} />
+//                       <Tooltip content={<CustomTooltip />} />
+//                       <Legend />
+//                       <Bar
+//                         dataKey="completed"
+//                         fill={CHART_COLORS.success}
+//                         name="Completed"
+//                       />
+//                       <Bar
+//                         dataKey="pending"
+//                         fill={CHART_COLORS.warning}
+//                         name="Pending"
+//                       />
+//                     </BarChart>
+//                   </ResponsiveContainer>
+//                 </div>
+//               )}
+
+//               {/* Workload Distribution */}
+//               {workloadDistributionData.length > 0 && (
+//                 <div
+//                   className="rounded-3xl border p-6 backdrop-blur-xl"
+//                   style={{
+//                     background:
+//                       theme === "dark"
+//                         ? "rgba(30,41,59,0.8)"
+//                         : "rgba(255,255,255,0.98)",
+//                     borderColor:
+//                       theme === "dark" ? "#475569" : "#cbd5e1",
+//                   }}
+//                 >
+//                   <h3
+//                     className="text-xl font-black mb-4"
+//                     style={{ color: textColor }}
+//                   >
+//                     ⚖️ Role-wise Workload
+//                   </h3>
+//                   <ResponsiveContainer width="100%" height={300}>
+//                     <BarChart data={workloadDistributionData}>
+//                       <CartesianGrid
+//                         strokeDasharray="3 3"
+//                         stroke={
+//                           theme === "dark" ? "#334155" : "#e2e8f0"
+//                         }
+//                       />
+//                       <XAxis
+//                         dataKey="role"
+//                         stroke={secondaryTextColor}
+//                         angle={-45}
+//                         textAnchor="end"
+//                         height={80}
+//                         style={{ fontSize: "11px" }}
+//                       />
+//                       <YAxis stroke={secondaryTextColor} />
+//                       <Tooltip content={<CustomTooltip />} />
+//                       <Legend />
+//                       <Bar
+//                         dataKey="items"
+//                         fill={CHART_COLORS.primary}
+//                         name="Total Items"
+//                       />
+//                       <Bar
+//                         dataKey="avgPerUser"
+//                         fill={CHART_COLORS.info}
+//                         name="Avg per User"
+//                       />
+//                     </BarChart>
+//                   </ResponsiveContainer>
+//                 </div>
+//               )}
+//             </div>
+
+//             {/* Velocity Chart & Role Radar */}
+//             <div className="grid gap-6 lg:grid-cols-2">
+//               {/* Velocity/Timeline */}
+//               {velocityChartData.length > 0 && (
+//                 <div
+//                   className="rounded-3xl border p-6 backdrop-blur-xl"
+//                   style={{
+//                     background:
+//                       theme === "dark"
+//                         ? "rgba(30,41,59,0.8)"
+//                         : "rgba(255,255,255,0.98)",
+//                     borderColor:
+//                       theme === "dark" ? "#475569" : "#cbd5e1",
+//                   }}
+//                 >
+//                   <h3
+//                     className="text-xl font-black mb-4"
+//                     style={{ color: textColor }}
+//                   >
+//                     📈 30-Day Activity Velocity
+//                   </h3>
+//                   <ResponsiveContainer width="100%" height={300}>
+//                     <AreaChart data={velocityChartData}>
+//                       <defs>
+//                         <linearGradient
+//                           id="colorCompleted"
+//                           x1="0"
+//                           y1="0"
+//                           x2="0"
+//                           y2="1"
+//                         >
+//                           <stop
+//                             offset="5%"
+//                             stopColor={CHART_COLORS.success}
+//                             stopOpacity={0.8}
+//                           />
+//                           <stop
+//                             offset="95%"
+//                             stopColor={CHART_COLORS.success}
+//                             stopOpacity={0}
+//                           />
+//                         </linearGradient>
+//                         <linearGradient
+//                           id="colorStarted"
+//                           x1="0"
+//                           y1="0"
+//                           x2="0"
+//                           y2="1"
+//                         >
+//                           <stop
+//                             offset="5%"
+//                             stopColor={CHART_COLORS.secondary}
+//                             stopOpacity={0.8}
+//                           />
+//                           <stop
+//                             offset="95%"
+//                             stopColor={CHART_COLORS.secondary}
+//                             stopOpacity={0}
+//                           />
+//                         </linearGradient>
+//                       </defs>
+//                       <CartesianGrid
+//                         strokeDasharray="3 3"
+//                         stroke={
+//                           theme === "dark" ? "#334155" : "#e2e8f0"
+//                         }
+//                       />
+//                       <XAxis
+//                         dataKey="date"
+//                         stroke={secondaryTextColor}
+//                         style={{ fontSize: "10px" }}
+//                       />
+//                       <YAxis stroke={secondaryTextColor} />
+//                       <Tooltip content={<CustomTooltip />} />
+//                       <Legend />
+//                       <Area
+//                         type="monotone"
+//                         dataKey="completed"
+//                         stroke={CHART_COLORS.success}
+//                         fillOpacity={1}
+//                         fill="url(#colorCompleted)"
+//                         name="Completed"
+//                       />
+//                       <Area
+//                         type="monotone"
+//                         dataKey="started"
+//                         stroke={CHART_COLORS.secondary}
+//                         fillOpacity={1}
+//                         fill="url(#colorStarted)"
+//                         name="Started"
+//                       />
+//                     </AreaChart>
+//                   </ResponsiveContainer>
+//                 </div>
+//               )}
+
+//               {/* Role Performance Radar */}
+//               {roleRadarData.length > 0 && (
+//                 <div
+//                   className="rounded-3xl border p-6 backdrop-blur-xl"
+//                   style={{
+//                     background:
+//                       theme === "dark"
+//                         ? "rgba(30,41,59,0.8)"
+//                         : "rgba(255,255,255,0.98)",
+//                     borderColor:
+//                       theme === "dark" ? "#475569" : "#cbd5e1",
+//                   }}
+//                 >
+//                   <h3
+//                     className="text-xl font-black mb-4"
+//                     style={{ color: textColor }}
+//                   >
+//                     🎯 Role Coverage Analysis
+//                   </h3>
+//                   <ResponsiveContainer width="100%" height={300}>
+//                     <RadarChart data={roleRadarData}>
+//                       <PolarGrid
+//                         stroke={
+//                           theme === "dark" ? "#334155" : "#e2e8f0"
+//                         }
+//                       />
+//                       <PolarAngleAxis
+//                         dataKey="role"
+//                         stroke={secondaryTextColor}
+//                         style={{ fontSize: "12px" }}
+//                       />
+//                       <PolarRadiusAxis stroke={secondaryTextColor} />
+//                       <Radar
+//                         name="Coverage"
+//                         dataKey="coverage"
+//                         stroke={CHART_COLORS.primary}
+//                         fill={CHART_COLORS.primary}
+//                         fillOpacity={0.6}
+//                       />
+//                       <Tooltip content={<CustomTooltip />} />
+//                       <Legend />
+//                     </RadarChart>
+//                   </ResponsiveContainer>
+//                 </div>
+//               )}
+//             </div>
+
+//             {/* Bottleneck Alert Section */}
+//             {bottleneckData.length > 0 && (
+//               <div
+//                 className="rounded-3xl border-2 p-6 backdrop-blur-xl"
+//                 style={{
+//                   background:
+//                     theme === "dark"
+//                       ? "rgba(127,29,29,0.4)"
+//                       : "rgba(254,242,242,0.95)",
+//                   borderColor: "#ef4444",
+//                 }}
+//               >
+//                 <div className="flex items-center gap-3 mb-6">
+//                   <div
+//                     className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+//                     style={{
+//                       background:
+//                         "linear-gradient(135deg, #ef4444, #f87171)",
+//                     }}
+//                   >
+//                     ⚠️
+//                   </div>
+//                   <div>
+//                     <h3
+//                       className="text-xl font-black"
+//                       style={{ color: textColor }}
+//                     >
+//                       🚨 Bottleneck Alert
+//                     </h3>
+//                     <p
+//                       className="text-sm font-semibold"
+//                       style={{ color: secondaryTextColor }}
+//                     >
+//                       Stages requiring immediate attention (&gt;50% pending
+//                       items)
+//                     </p>
+//                   </div>
+//                 </div>
+//                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+//                   {bottleneckData.map((stage, idx) => (
+//                     <div
+//                       key={idx}
+//                       className="rounded-2xl border-2 p-4"
+//                       style={{
+//                         borderColor: "#f87171",
+//                         background:
+//                           theme === "dark"
+//                             ? "rgba(127,29,29,0.3)"
+//                             : "rgba(254,226,226,0.5)",
+//                       }}
+//                     >
+//                       <div className="flex justify-between items-center mb-2">
+//                         <div
+//                           className="font-black text-base"
+//                           style={{ color: textColor }}
+//                         >
+//                           {stage.stage}
+//                         </div>
+//                         <div
+//                           className="text-2xl font-black"
+//                           style={{ color: "#ef4444" }}
+//                         >
+//                           {stage.bottleneckScore}%
+//                         </div>
+//                       </div>
+//                       <div
+//                         className="text-sm font-semibold"
+//                         style={{ color: secondaryTextColor }}
+//                       >
+//                         {stage.pendingItems} of {stage.totalItems} items
+//                         pending
+//                       </div>
+//                       <div className="w-full h-2 rounded-full bg-black/20 overflow-hidden mt-3">
+//                         <div
+//                           className="h-full rounded-full"
+//                           style={{
+//                             width: `${stage.bottleneckScore}%`,
+//                             background:
+//                               "linear-gradient(90deg, #ef4444, #f87171)",
+//                           }}
+//                         />
+//                       </div>
+//                     </div>
+//                   ))}
+//                 </div>
+//               </div>
+//             )}
+
+//             {/* Recent Activity */}
+//             {recentActivity && (
+//               <div>
+//                 <h2
+//                   className="text-2xl font-black mb-6 tracking-tight"
+//                   style={{ color: textColor }}
+//                 >
+//                   Recent Activity (Last {recentActivity.days} Days)
+//                 </h2>
+//                 <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
+//                   {[
+//                     {
+//                       label: "Total Activity",
+//                       value: recentActivity.total,
+//                       gradient:
+//                         "linear-gradient(135deg, #6366f1, #8b5cf6)",
+//                     },
+//                     {
+//                       label: "Completed",
+//                       value: recentActivity.counts.completed || 0,
+//                       gradient:
+//                         "linear-gradient(135deg, #10b981, #34d399)",
+//                     },
+//                     {
+//                       label: "Pending Checker",
+//                       value:
+//                         recentActivity.counts.pending_checker || 0,
+//                       gradient:
+//                         "linear-gradient(135deg, #3b82f6, #60a5fa)",
+//                     },
+//                     {
+//                       label: "Pending Inspector",
+//                       value:
+//                         recentActivity.counts.pending_for_inspector ||
+//                         0,
+//                       gradient:
+//                         "linear-gradient(135deg, #f97316, #fb923c)",
+//                     },
+//                   ].map((item, idx) => (
+//                     <div
+//                       key={idx}
+//                       className="rounded-3xl border p-6 backdrop-blur-xl hover:shadow-xl transition-all duration-300"
+//                       style={{
+//                         background:
+//                           theme === "dark"
+//                             ? "rgba(30,41,59,0.6)"
+//                             : "rgba(255,255,255,0.95)",
+//                         borderColor:
+//                           theme === "dark" ? "#475569" : "#cbd5e1",
+//                       }}
+//                     >
+//                       <div
+//                         className="text-xs font-bold uppercase tracking-wider mb-2"
+//                         style={{ color: secondaryTextColor }}
+//                       >
+//                         {item.label}
+//                       </div>
+//                       <div
+//                         className="text-4xl font-black"
+//                         style={{
+//                           background: item.gradient,
+//                           WebkitBackgroundClip: "text",
+//                           WebkitTextFillColor: "transparent",
+//                           backgroundClip: "text",
+//                         }}
+//                       >
+//                         {fmtInt(item.value)}
+//                       </div>
+//                     </div>
+//                   ))}
+//                 </div>
+//               </div>
+//             )}
+//             {/* Flat / Room Hotspots – Top Flats with Open Issues */}
+//             {locationHotspots.length > 0 && (
+//               <div className="mt-10">
+//                 <h2
+//                   className="text-2xl font-black mb-4 tracking-tight flex items-center gap-2"
+//                   style={{ color: textColor }}
+//                 >
+//                   🏠 Flat / Room Hotspots
+//                   <span
+//                     className="text-xs font-semibold px-3 py-1 rounded-full"
+//                     style={{
+//                       background:
+//                         theme === "dark"
+//                           ? "rgba(30,64,175,0.35)"
+//                           : "rgba(219,234,254,0.9)",
+//                       color: secondaryTextColor,
+//                     }}
+//                   >
+//                     Top {locationHotspots.length} flats with open issues
+//                   </span>
+//                 </h2>
+
+//                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+//                   {locationHotspots.map((f) => {
+//                     const meta = f.meta || {};
+//                     const label =
+//                       meta.number || meta.typeName
+//                         ? `Flat ${meta.number || f.flatId}${
+//                             meta.typeName ? ` • ${meta.typeName}` : ""
+//                           }`
+//                         : `Flat #${f.flatId}`;
+
+//                     const levelLabel = meta.levelName
+//                       ? meta.levelName
+//                       : "";
+
+//                     const completionPct =
+//                       f.total > 0
+//                         ? Math.round(
+//                             (safeNumber(f.completed) /
+//                               safeNumber(f.total)) *
+//                               100
+//                           )
+//                         : 0;
+
+//                     return (
+//                       <button
+//                         key={f.flatId}
+//                         type="button"
+//   onClick={() => handleOpenFlatReport(f.flatId, f.meta || null)}
+//                         className="text-left rounded-2xl border p-4 hover:shadow-xl transition-all duration-300 group"
+//                         style={{
+//                           borderColor:
+//                             theme === "dark" ? "#475569" : "#e2e8f0",
+//                           background:
+//                             theme === "dark"
+//                               ? "rgba(15,23,42,0.9)"
+//                               : "rgba(255,255,255,0.98)",
+//                         }}
+//                       >
+//                         <div className="flex justify-between items-start mb-2">
+//                           <div>
+//                             <div
+//                               className="text-sm font-black"
+//                               style={{ color: textColor }}
+//                             >
+//                               {label}
+//                             </div>
+//                             {levelLabel && (
+//                               <div
+//                                 className="text-[11px] font-semibold"
+//                                 style={{ color: secondaryTextColor }}
+//                               >
+//                                 {levelLabel}
+//                               </div>
+//                             )}
+//                           </div>
+//                           <div className="text-right text-xs font-semibold">
+//                             <div
+//                               style={{
+//                                 color: secondaryTextColor,
+//                               }}
+//                             >
+//                               Total: {fmtInt(f.total)}
+//                             </div>
+//                             <div
+//                               style={{
+//                                 color: "#ef4444",
+//                               }}
+//                             >
+//                               Open: {fmtInt(f.openIssues)}
+//                             </div>
+//                           </div>
+//                         </div>
+
+//                         {/* Progress bar */}
+//                         <div className="mt-2">
+//                           <div className="flex justify-between text-[11px] font-semibold mb-1">
+//                             <span style={{ color: secondaryTextColor }}>
+//                               Completion
+//                             </span>
+//                             <span style={{ color: textColor }}>
+//                               {completionPct}%
+//                             </span>
+//                           </div>
+//                           <div className="w-full h-2.5 rounded-full bg-black/10 overflow-hidden">
+//                             <div
+//                               className="h-full rounded-full transition-all duration-700 group-hover:scale-x-[1.02] origin-left"
+//                               style={{
+//                                 width: `${completionPct}%`,
+//                                 background:
+//                                   "linear-gradient(90deg, #10b981, #22c55e, #a3e635)",
+//                               }}
+//                             />
+//                           </div>
+//                         </div>
+
+//                         <div
+//                           className="mt-3 grid grid-cols-3 gap-2 text-[11px] font-semibold"
+//                           style={{ color: secondaryTextColor }}
+//                         >
+//                           <div>
+//                             <div>Completed</div>
+//                             <div
+//                               className="text-xs font-black"
+//                               style={{ color: textColor }}
+//                             >
+//                               {fmtInt(f.completed)}
+//                             </div>
+//                           </div>
+//                           <div>
+//                             <div>Pending</div>
+//                             <div
+//                               className="text-xs font-black"
+//                               style={{ color: "#f97316" }}
+//                             >
+//                               {fmtInt(
+//                                 safeNumber(f.pending_checker) +
+//                                   safeNumber(
+//                                     f.pending_for_inspector
+//                                   ) +
+//                                   safeNumber(f.not_started)
+//                               )}
+//                             </div>
+//                           </div>
+//                           <div>
+//                             <div>Click for report</div>
+//                             <div className="text-[10px] opacity-70">
+//                               Room-wise details
+//                             </div>
+//                           </div>
+//                         </div>
+//                       </button>
+//                     );
+//                   })}
+//                 </div>
+//               </div>
+//             )}
+
+//             {/* Question Hotspots (Top 10 Questions) */}
+//                        {/* Question Hotspots with Stage + Category + Location Filters */}
+//             <div>
+//               <h2
+//                 className="text-2xl font-black mb-4 tracking-tight flex items-center gap-2"
+//                 style={{ color: textColor }}
+//               >
+//                 🔥 Question Hotspots (Slice-wise)
+//                 <span
+//                   className="text-xs font-semibold px-3 py-1 rounded-full"
+//                   style={{
+//                     background:
+//                       theme === "dark"
+//                         ? "rgba(30,64,175,0.35)"
+//                         : "rgba(219,234,254,0.9)",
+//                     color: secondaryTextColor,
+//                   }}
+//                 >
+//                   Stage + Category + Building + Floor + Room + Status
+//                 </span>
+//               </h2>
+
+//               <div
+//                 className="rounded-3xl border p-6 backdrop-blur-xl"
+//                 style={{
+//                   background:
+//                     theme === "dark"
+//                       ? "rgba(30,41,59,0.9)"
+//                       : "rgba(255,255,255,0.98)",
+//                   borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+//                 }}
+//               >
+//                 {/* Local filters for this section */}
+//                 <div className="flex flex-wrap gap-3 mb-4 items-end justify-between">
+//                   <div className="flex flex-wrap gap-3">
+//                     {/* Stage */}
+//                     <div className="min-w-[180px]">
+//                       <label
+//                         className="text-[11px] font-semibold block mb-1"
+//                         style={{ color: secondaryTextColor }}
+//                       >
+//                         Stage
+//                       </label>
+//                       <select
+//                         value={questionFilters.stageId}
+//                         onChange={(e) =>
+//                           setQuestionFilters((prev) => ({
+//                             ...prev,
+//                             stageId: e.target.value,
+//                           }))
+//                         }
+//                         className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                         style={{
+//                           borderColor:
+//                             theme === "dark" ? "#475569" : "#cbd5e1",
+//                           background:
+//                             theme === "dark"
+//                               ? "rgba(15,23,42,0.9)"
+//                               : "rgba(248,250,252,0.95)",
+//                           color: textColor,
+//                         }}
+//                       >
+//                         <option value="">All stages</option>
+//                         {Object.entries(stageMap).map(([sid, label]) => (
+//                           <option key={sid} value={sid}>
+//                             {label}
+//                           </option>
+//                         ))}
+//                       </select>
+//                     </div>
+
+//                     {/* Checklist category */}
+//                     {checklistCategoryOptions.length > 0 && (
+//                       <div className="min-w-[180px]">
+//                         <label
+//                           className="text-[11px] font-semibold block mb-1"
+//                           style={{ color: secondaryTextColor }}
+//                         >
+//                           Checklist title
+//                         </label>
+//                         <select
+//                           value={questionFilters.categoryId}
+//                           onChange={(e) =>
+//                             setQuestionFilters((prev) => ({
+//                               ...prev,
+//                               categoryId: e.target.value,
+//                             }))
+//                           }
+//                           className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                           style={{
+//                             borderColor:
+//                               theme === "dark" ? "#475569" : "#cbd5e1",
+//                             background:
+//                               theme === "dark"
+//                                 ? "rgba(15,23,42,0.9)"
+//                                 : "rgba(248,250,252,0.95)",
+//                             color: textColor,
+//                           }}
+//                         >
+//                           <option value="">All Checklist Titles</option>
+//                           {checklistCategoryOptions.map((c) => (
+//                             <option key={c.id} value={c.id}>
+//                               {c.label}
+//                             </option>
+//                           ))}
+//                         </select>
+//                       </div>
+//                     )}
+
+//                     {/* Building */}
+//                     {buildingOptions.length > 0 && (
+//                       <div className="min-w-[180px]">
+//                         <label
+//                           className="text-[11px] font-semibold block mb-1"
+//                           style={{ color: secondaryTextColor }}
+//                         >
+//                           Building
+//                         </label>
+//                         <select
+//   value={questionFilters.buildingId}
+//   onChange={(e) =>
+//     setQuestionFilters((prev) => ({
+//       ...prev,
+//       buildingId: e.target.value,
+//       floorId: "", // building change → floor reset
+//     }))
+//   }
+// >
+//   <option value="">All buildings</option>
+//   {buildingOptions.map((b) => (
+//     <option key={b.id} value={b.id}>
+//       {b.label}
+//     </option>
+//   ))}
+// </select>
+
+//                       </div>
+//                     )}
+
+//                     {/* Floor (depends on building in this section) */}
+//                     {questionFilters.buildingId &&
+//                       questionFloorOptions.length > 0 && (
+//                         <div className="min-w-[180px]">
+//                           <label
+//                             className="text-[11px] font-semibold block mb-1"
+//                             style={{ color: secondaryTextColor }}
+//                           >
+//                             Floor
+//                           </label>
+//                           <select
+//                             value={questionFilters.floorId}
+//                             onChange={(e) =>
+//                               setQuestionFilters((prev) => ({
+//                                 ...prev,
+//                                 floorId: e.target.value,
+//                               }))
+//                             }
+//                             className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                             style={{
+//                               borderColor:
+//                                 theme === "dark" ? "#475569" : "#cbd5e1",
+//                               background:
+//                                 theme === "dark"
+//                                   ? "rgba(15,23,42,0.9)"
+//                                   : "rgba(248,250,252,0.95)",
+//                               color: textColor,
+//                             }}
+//                           >
+//                             <option value="">All floors</option>
+//                             {questionFloorOptions.map((f) => (
+//                               <option key={f.id} value={f.id}>
+//                                 {f.label}
+//                               </option>
+//                             ))}
+//                           </select>
+//                         </div>
+//                       )}
+
+//                     {/* Room category */}
+//                     {roomCategoryOptions.length > 0 && (
+//                       <div className="min-w-[180px]">
+//                         <label
+//                           className="text-[11px] font-semibold block mb-1"
+//                           style={{ color: secondaryTextColor }}
+//                         >
+//                           Room
+//                         </label>
+//                         <select
+//                           value={questionFilters.roomCategory}
+//                           onChange={(e) =>
+//                             setQuestionFilters((prev) => ({
+//                               ...prev,
+//                               roomCategory: e.target.value,
+//                             }))
+//                           }
+//                           className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                           style={{
+//                             borderColor:
+//                               theme === "dark" ? "#475569" : "#cbd5e1",
+//                             background:
+//                               theme === "dark"
+//                                 ? "rgba(15,23,42,0.9)"
+//                                 : "rgba(248,250,252,0.95)",
+//                             color: textColor,
+//                           }}
+//                         >
+//                           <option value="">All rooms</option>
+//                           {roomCategoryOptions.map((cat) => (
+//                             <option key={cat} value={cat}>
+//                               {cat}
+//                             </option>
+//                           ))}
+//                         </select>
+//                       </div>
+//                     )}
+
+//                     {/* Status bucket */}
+//                     <div className="min-w-[150px]">
+//                       <label
+//                         className="text-[11px] font-semibold block mb-1"
+//                         style={{ color: secondaryTextColor }}
+//                       >
+//                         Status bucket
+//                       </label>
+//                       <select
+//                         value={questionFilters.statusBucket}
+//                         onChange={(e) =>
+//                           setQuestionFilters((prev) => ({
+//                             ...prev,
+//                             statusBucket: e.target.value,
+//                           }))
+//                         }
+//                         className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+//                         style={{
+//                           borderColor:
+//                             theme === "dark" ? "#475569" : "#cbd5e1",
+//                           background:
+//                             theme === "dark"
+//                               ? "rgba(15,23,42,0.9)"
+//                               : "rgba(248,250,252,0.95)",
+//                           color: textColor,
+//                         }}
+//                       >
+//                         <option value="open">Open only</option>
+//                         <option value="closed">Completed only</option>
+//                         <option value="all">All statuses</option>
+//                       </select>
+//                     </div>
+//                   </div>
+
+//                   {/* Clear button */}
+//                   <button
+//                     type="button"
+//                     onClick={() =>
+//                       setQuestionFilters({
+//                         stageId: "",
+//                         categoryId: "",
+//                         buildingId: "",
+//                         floorId: "",
+//                         roomCategory: "",
+//                         statusBucket: "open",
+//                       })
+//                     }
+//                     className="px-3 py-2 rounded-xl text-xs font-bold border"
+//                     style={{
+//                       borderColor:
+//                         theme === "dark" ? "#64748b" : "#cbd5e1",
+//                       background:
+//                         theme === "dark"
+//                           ? "rgba(15,23,42,0.9)"
+//                           : "rgba(248,250,252,0.95)",
+//                       color: secondaryTextColor,
+//                     }}
+//                   >
+//                     Clear filters
+//                   </button>
+//                 </div>
+
+//                 {/* List of questions for current slice */}
+//                 {questionStatusData.length === 0 ? (
+//                   <div
+//                     className="py-6 text-sm font-semibold"
+//                     style={{ color: secondaryTextColor }}
+//                   >
+//                     No questions match the current Question Hotspot filters.
+//                   </div>
+//                 ) : (
+//                   <div className="space-y-4 mt-2">
+//                     {questionStatusData.map((q, idx) => (
+//                       <div
+//                         key={idx}
+//                         className="rounded-2xl border px-4 py-3"
+//                         style={{
+//                           borderColor:
+//                             theme === "dark" ? "#475569" : "#e2e8f0",
+//                           background:
+//                             theme === "dark"
+//                               ? "rgba(15,23,42,0.85)"
+//                               : "rgba(248,250,252,0.95)",
+//                         }}
+//                       >
+//                         <div className="flex justify-between items-start gap-3 mb-2">
+//                           <div className="flex-1">
+//                             <div
+//                               className="text-sm font-bold mb-1"
+//                               style={{ color: textColor }}
+//                             >
+//                               {q.question}
+//                             </div>
+//                             {q.categoryLabel && (
+//                               <div
+//                                 className="text-[11px] font-semibold"
+//                                 style={{ color: secondaryTextColor }}
+//                               >
+//                                 Category: {q.categoryLabel}
+//                               </div>
+//                             )}
+//                           </div>
+//                           <div className="text-right text-xs font-black">
+//                             <div style={{ color: textColor }}>
+//                               Total: {fmtInt(q.total)}
+//                             </div>
+//                             <div style={{ color: "#ef4444" }}>
+//                               Open: {fmtInt(q.openCount)} ({q.openPct}%)
+//                             </div>
+//                             <div style={{ color: "#10b981" }}>
+//                               Done: {fmtInt(q.completed)} ({q.completedPct}
+//                               %)
+//                             </div>
+//                           </div>
+//                         </div>
+
+//                         {/* Open vs completed bar */}
+//                         <div className="w-full h-2.5 rounded-full bg-black/10 overflow-hidden mb-1">
+//                           <div
+//                             className="h-full rounded-full"
+//                             style={{
+//                               width: `${q.openPct}%`,
+//                               background:
+//                                 "linear-gradient(90deg, #ef4444, #f97316)",
+//                             }}
+//                           />
+//                         </div>
+//                         <div
+//                           className="mt-1 text-[11px] font-semibold flex justify-between"
+//                           style={{ color: secondaryTextColor }}
+//                         >
+//                           <span>
+//                             {q.openPct}% of this question is still open
+//                           </span>
+//                           <span>
+//                             Completed: {q.completedPct}% of this question
+//                           </span>
+//                         </div>
+//                       </div>
+//                     ))}
+//                   </div>
+//                 )}
+//               </div>
+//             </div>
+
+
+//             {/* ROLES & ACCESS OVERVIEW (CONFIG + ACTIVITY) */}
+//             {(coverageList.length > 0 ||
+//               inactiveAssignments.length > 0 ||
+//               unconfiguredActivity.length > 0 ||
+//               configByUser.length > 0) && (
+//               <div className="space-y-6">
+//                 <div className="flex flex-wrap items-center justify-between gap-3">
+//                   <h2
+//                     className="text-2xl font-black tracking-tight"
+//                     style={{ color: textColor }}
+//                   >
+//                     🧩 Roles & Access Overview
+//                   </h2>
+//                   <p
+//                     className="text-sm font-semibold"
+//                     style={{ color: secondaryTextColor }}
+//                   >
+//                     Configured responsibilities vs. actual checklist
+//                     activity
+//                   </p>
+//                 </div>
+
+//                 {/* Stage & Role Coverage + Per-user Config */}
+//                 <div className="grid gap-6 lg:grid-cols-2">
+//                   {coverageList.length > 0 && (
+//                     <div
+//                       className="rounded-3xl border p-6 backdrop-blur-xl"
+//                       style={{
+//                         background:
+//                           theme === "dark"
+//                             ? "rgba(30,41,59,0.8)"
+//                             : "rgba(255,255,255,0.98)",
+//                         borderColor:
+//                           theme === "dark" ? "#475569" : "#cbd5e1",
+//                       }}
+//                     >
+//                       <h3
+//                         className="text-xl font-black mb-4"
+//                         style={{ color: textColor }}
+//                       >
+//                         Stage & Role Coverage (from Config)
+//                       </h3>
+//                       <div className="space-y-4 max-h-[320px] overflow-auto pr-1">
+//                         {coverageList.map((entry) => (
+//                           <div
+//                             key={entry.stageId}
+//                             className="rounded-2xl border px-4 py-3"
+//                             style={{
+//                               borderColor:
+//                                 theme === "dark"
+//                                   ? "#475569"
+//                                   : "#e2e8f0",
+//                               background:
+//                                 theme === "dark"
+//                                   ? "rgba(15,23,42,0.85)"
+//                                   : "rgba(248,250,252,0.95)",
+//                             }}
+//                           >
+//                             <div className="flex items-center justify-between mb-2">
+//                               <div
+//                                 className="font-black"
+//                                 style={{ color: textColor }}
+//                               >
+//                                 {entry.stageLabel}
+//                               </div>
+//                               <div
+//                                 className="text-xs font-semibold px-2 py-1 rounded-full"
+//                                 style={{
+//                                   background:
+//                                     theme === "dark"
+//                                       ? "rgba(30,64,175,0.3)"
+//                                       : "rgba(219,234,254,0.9)",
+//                                   color: secondaryTextColor,
+//                                 }}
+//                               >
+//                                 {entry.roles.reduce(
+//                                   (sum, r) => sum + r.userCount,
+//                                   0
+//                                 )}{" "}
+//                                 users mapped
+//                               </div>
+//                             </div>
+//                             <div className="flex flex-wrap gap-2">
+//                               {entry.roles.map((r) => (
+//                                 <span
+//                                   key={r.roleName}
+//                                   className="px-3 py-1 rounded-full text-xs font-semibold"
+//                                   style={{
+//                                     background:
+//                                       theme === "dark"
+//                                         ? "rgba(30,64,175,0.4)"
+//                                         : "rgba(239,246,255,0.9)",
+//                                     color: textColor,
+//                                     border: `1px solid ${
+//                                       theme === "dark"
+//                                         ? "#3b82f6"
+//                                         : "#60a5fa"
+//                                     }`,
+//                                   }}
+//                                 >
+//                                   {r.roleName} • {r.userCount} user
+//                                   {r.userCount === 1 ? "" : "s"}
+//                                 </span>
+//                               ))}
+//                             </div>
+//                           </div>
+//                         ))}
+//                       </div>
+//                     </div>
+//                   )}
+
+//                   {configByUser.length > 0 && (
+//                     <div
+//                       className="rounded-3xl border p-6 backdrop-blur-xl"
+//                       style={{
+//                         background:
+//                           theme === "dark"
+//                             ? "rgba(30,41,59,0.8)"
+//                             : "rgba(255,255,255,0.98)",
+//                         borderColor:
+//                           theme === "dark" ? "#475569" : "#cbd5e1",
+//                       }}
+//                     >
+//                       <h3
+//                         className="text-xl font-black mb-4"
+//                         style={{ color: textColor }}
+//                       >
+//                         Per-user Configuration
+//                       </h3>
+//                       <div className="space-y-3 max-h-[320px] overflow-auto pr-1">
+//                         {configByUser.map((u) => (
+//                           <div
+//                             key={u.userId}
+//                             className="rounded-2xl border px-4 py-3"
+//                             style={{
+//                               borderColor:
+//                                 theme === "dark"
+//                                   ? "#475569"
+//                                   : "#e2e8f0",
+//                               background:
+//                                 theme === "dark"
+//                                   ? "rgba(15,23,42,0.85)"
+//                                   : "rgba(248,250,252,0.95)",
+//                             }}
+//                           >
+//                             <div className="flex items-center justify-between mb-1">
+//                               <div
+//                                 className="font-black"
+//                                 style={{ color: textColor }}
+//                               >
+//                                 {u.userName}
+//                               </div>
+//                               <div
+//                                 className="text-[11px] font-semibold px-2 py-1 rounded-full"
+//                                 style={{
+//                                   background:
+//                                     theme === "dark"
+//                                       ? "rgba(22,163,74,0.3)"
+//                                       : "rgba(220,252,231,0.9)",
+//                                   color: secondaryTextColor,
+//                                 }}
+//                               >
+//                                 {u.accesses.length} access
+//                                 {u.accesses.length === 1 ? "" : "es"}
+//                               </div>
+//                             </div>
+//                             <div
+//                               className="text-[11px] space-y-1"
+//                               style={{ color: secondaryTextColor }}
+//                             >
+//                               {u.accesses.slice(0, 4).map((acc, idx) => (
+//                                 <div key={idx}>
+//                                   <span className="font-semibold">
+//                                     {acc.roleNames && acc.roleNames.length
+//                                       ? acc.roleNames.join(", ")
+//                                       : "Role"}
+//                                   </span>{" "}
+//                                   on{" "}
+//                                   <span>
+//                                     {stageMap[acc.stageId] ||
+//                                       (acc.stageId
+//                                         ? `Stage #${acc.stageId}`
+//                                         : "-")}
+//                                   </span>
+//                                 </div>
+//                               ))}
+//                               {u.accesses.length > 4 && (
+//                                 <div className="opacity-70">
+//                                   +{u.accesses.length - 4} more…
+//                                 </div>
+//                               )}
+//                             </div>
+//                           </div>
+//                         ))}
+//                       </div>
+//                     </div>
+//                   )}
+//                 </div>
+
+//                 {/* Config vs Activity anomalies */}
+//                 {(inactiveAssignments.length > 0 ||
+//                   unconfiguredActivity.length > 0) && (
+//                   <div className="grid gap-6 lg:grid-cols-2">
+//                     {inactiveAssignments.length > 0 && (
+//                       <div
+//                         className="rounded-3xl border p-6 backdrop-blur-xl"
+//                         style={{
+//                           background:
+//                             theme === "dark"
+//                               ? "rgba(30,41,59,0.8)"
+//                               : "rgba(255,255,255,0.98)",
+//                           borderColor:
+//                             theme === "dark" ? "#475569" : "#cbd5e1",
+//                         }}
+//                       >
+//                         <h3
+//                           className="text-xl font-black mb-2"
+//                           style={{ color: textColor }}
+//                         >
+//                           💤 Configured but No Activity
+//                         </h3>
+//                         <p
+//                           className="text-xs mb-3"
+//                           style={{ color: secondaryTextColor }}
+//                         >
+//                           Users mapped in configuration but not yet
+//                           appearing in checklist submissions.
+//                         </p>
+//                         <div className="max-h-[260px] overflow-auto pr-1">
+//                           <table className="min-w-full text-xs">
+//                             <thead>
+//                               <tr style={{ color: secondaryTextColor }}>
+//                                 <th className="text-left py-2 pr-3 font-semibold">
+//                                   User
+//                                 </th>
+//                                 <th className="text-left py-2 pr-3 font-semibold">
+//                                   Stage
+//                                 </th>
+//                                 <th className="text-left py-2 pr-3 font-semibold">
+//                                   Role
+//                                 </th>
+//                               </tr>
+//                             </thead>
+//                             <tbody>
+//                               {inactiveAssignments.map((row, idx) => (
+//                                 <tr
+//                                   key={idx}
+//                                   className="border-t"
+//                                   style={{
+//                                     borderColor:
+//                                       theme === "dark"
+//                                         ? "#334155"
+//                                         : "#e2e8f0",
+//                                   }}
+//                                 >
+//                                   <td
+//                                     className="py-2 pr-3"
+//                                     style={{ color: textColor }}
+//                                   >
+//                                     {row.userName}
+//                                   </td>
+//                                   <td
+//                                     className="py-2 pr-3"
+//                                     style={{
+//                                       color: secondaryTextColor,
+//                                     }}
+//                                   >
+//                                     {stageMap[row.stageId] ||
+//                                       (row.stageId
+//                                         ? `Stage #${row.stageId}`
+//                                         : "-")}
+//                                   </td>
+//                                   <td
+//                                     className="py-2 pr-3"
+//                                     style={{
+//                                       color: secondaryTextColor,
+//                                     }}
+//                                   >
+//                                     {row.roleName}
+//                                   </td>
+//                                 </tr>
+//                               ))}
+//                             </tbody>
+//                           </table>
+//                         </div>
+//                       </div>
+//                     )}
+
+//                     {unconfiguredActivity.length > 0 && (
+//                       <div
+//                         className="rounded-3xl border p-6 backdrop-blur-xl"
+//                         style={{
+//                           background:
+//                             theme === "dark"
+//                               ? "rgba(30,41,59,0.8)"
+//                               : "rgba(255,255,255,0.98)",
+//                           borderColor:
+//                             theme === "dark" ? "#475569" : "#cbd5e1",
+//                         }}
+//                       >
+//                         <h3
+//                           className="text-xl font-black mb-2"
+//                           style={{ color: textColor }}
+//                         >
+//                           🔍 Activity Without Config
+//                         </h3>
+//                         <p
+//                           className="text-xs mb-3"
+//                           style={{ color: secondaryTextColor }}
+//                         >
+//                           Submissions done by users who are not formally
+//                           mapped to that stage/role.
+//                         </p>
+//                         <div className="max-h-[260px] overflow-auto pr-1">
+//                           <table className="min-w-full text-xs">
+//                             <thead>
+//                               <tr style={{ color: secondaryTextColor }}>
+//                                 <th className="text-left py-2 pr-3 font-semibold">
+//                                   User
+//                                 </th>
+//                                 <th className="text-left py-2 pr-3 font-semibold">
+//                                   Stage
+//                                 </th>
+//                                 <th className="text-left py-2 pr-3 font-semibold">
+//                                   Role
+//                                 </th>
+//                                 <th className="text-left py-2 pr-3 font-semibold">
+//                                   Items
+//                                 </th>
+//                               </tr>
+//                             </thead>
+//                             <tbody>
+//                               {unconfiguredActivity.map((row, idx) => (
+//                                 <tr
+//                                   key={idx}
+//                                   className="border-t"
+//                                   style={{
+//                                     borderColor:
+//                                       theme === "dark"
+//                                         ? "#334155"
+//                                         : "#e2e8f0",
+//                                   }}
+//                                 >
+//                                   <td
+//                                     className="py-2 pr-3"
+//                                     style={{ color: textColor }}
+//                                   >
+//                                     {row.userName}
+//                                   </td>
+//                                   <td
+//                                     className="py-2 pr-3"
+//                                     style={{
+//                                       color: secondaryTextColor,
+//                                     }}
+//                                   >
+//                                     {stageMap[row.stageId] ||
+//                                       (row.stageId
+//                                         ? `Stage #${row.stageId}`
+//                                         : "-")}
+//                                   </td>
+//                                   <td
+//                                     className="py-2 pr-3"
+//                                     style={{
+//                                       color: secondaryTextColor,
+//                                     }}
+//                                   >
+//                                     {row.roleName}
+//                                   </td>
+//                                   <td
+//                                     className="py-2 pr-3"
+//                                     style={{
+//                                       color: secondaryTextColor,
+//                                     }}
+//                                   >
+//                                     {fmtInt(row.count || 0)}
+//                                   </td>
+//                                 </tr>
+//                               ))}
+//                             </tbody>
+//                           </table>
+//                         </div>
+//                       </div>
+//                     )}
+//                   </div>
+//                 )}
+//               </div>
+//             )}
+
+//             {/* Detailed Item View */}
+//             <div>
+//               <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+//                 <h2
+//                   className="text-2xl font-black tracking-tight"
+//                   style={{ color: textColor }}
+//                 >
+//                   🔍 Detailed Item View
+//                 </h2>
+//                 <div className="flex flex-wrap gap-3">
+//                   <select
+//                     value={globalFilters.status}
+//                     onChange={(e) =>
+//                       setGlobalFilters((prev) => ({
+//                         ...prev,
+//                         status: e.target.value,
+//                       }))
+//                     }
+//                     className="px-4 py-2.5 rounded-xl border-2 font-semibold backdrop-blur-xl"
+//                     style={{
+//                       borderColor:
+//                         theme === "dark" ? "#475569" : "#cbd5e1",
+//                       background:
+//                         theme === "dark"
+//                           ? "rgba(30,41,59,0.8)"
+//                           : "rgba(255,255,255,0.9)",
+//                       color: textColor,
+//                     }}
+//                   >
+//                     <option value="">All Statuses</option>
+//                     {distinctStatuses.map((s) => (
+//                       <option key={s} value={s}>
+//                         {titleCaseStatus(s)}
+//                       </option>
+//                     ))}
+//                   </select>
+//                   <select
+//                     value={globalFilters.role}
+//                     onChange={(e) =>
+//                       setGlobalFilters((prev) => ({
+//                         ...prev,
+//                         role: e.target.value,
+//                       }))
+//                     }
+//                     className="px-4 py-2.5 rounded-xl border-2 font-semibold backdrop-blur-xl"
+//                     style={{
+//                       borderColor:
+//                         theme === "dark" ? "#475569" : "#cbd5e1",
+//                       background:
+//                         theme === "dark"
+//                           ? "rgba(30,41,59,0.8)"
+//                           : "rgba(255,255,255,0.9)",
+//                       color: textColor,
+//                     }}
+//                   >
+//                     <option value="">All Roles</option>
+//                     <option value="maker">Maker</option>
+//                     <option value="supervisor">Supervisor</option>
+//                     <option value="checker">Checker</option>
+//                   </select>
+//                 </div>
+//               </div>
+
+//               <div
+//                 className="rounded-3xl border overflow-hidden backdrop-blur-xl"
+//                 style={{
+//                   borderColor:
+//                     theme === "dark" ? "#475569" : "#cbd5e1",
+//                   background:
+//                     theme === "dark"
+//                       ? "rgba(30,41,59,0.95)"
+//                       : "rgba(255,255,255,0.98)",
+//                 }}
+//               >
+//                 <div className="relative max-h-[500px] overflow-auto">
+//                   <table className="min-w-full text-sm">
+//                     <thead
+//                       className="sticky top-0 z-10"
+//                       style={{
+//                         background:
+//                           theme === "dark" ? "#1e293b" : "#f1f5f9",
+//                       }}
+//                     >
+//                       <tr>
+//                         <th
+//                           className="text-left px-6 py-4 font-black"
+//                           style={{ color: textColor }}
+//                         >
+//                           Item
+//                         </th>
+//                         <th
+//                           className="text-left px-6 py-4 font-black"
+//                           style={{ color: textColor }}
+//                         >
+//                           Status
+//                         </th>
+//                         <th
+//                           className="text-left px-6 py-4 font-black"
+//                           style={{ color: textColor }}
+//                         >
+//                           Location
+//                         </th>
+//                         <th
+//                           className="text-left px-6 py-4 font-black"
+//                           style={{ color: textColor }}
+//                         >
+//                           Team
+//                         </th>
+//                         <th
+//                           className="text-left px-6 py-4 font-black"
+//                           style={{ color: textColor }}
+//                         >
+//                           Activity
+//                         </th>
+//                       </tr>
+//                     </thead>
+//                     <tbody>
+//                       {filteredItems.length === 0 ? (
+//                         <tr>
+//                           <td
+//                             colSpan={5}
+//                             className="px-6 py-12 text-center font-bold"
+//                             style={{ color: secondaryTextColor }}
+//                           >
+//                             No items match the current filters
+//                           </td>
+//                         </tr>
+//                       ) : (
+//                         filteredItems.map((item) => {
+//                           const col = statusColor(item.item_status);
+//                           const latest = item.latest_submission || {};
+//                           const lastTime =
+//                             latest.checked_at ||
+//                             latest.supervised_at ||
+//                             latest.maker_at ||
+//                             null;
+//                           const stageId = item.checklist?.stage_id;
+//                           const stageLabel =
+//                             (stageId && stageMap[stageId]) ||
+//                             (stageId ? `Stage #${stageId}` : "-");
+
+//                           return (
+//                             <tr
+//                               key={item.item_id}
+//                               className="border-t hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+//                               style={{
+//                                 borderColor:
+//                                   theme === "dark"
+//                                     ? "#334155"
+//                                     : "#e2e8f0",
+//                               }}
+//                             >
+//                               <td className="px-6 py-4 align-top">
+//                                 <div
+//                                   className="font-black mb-1"
+//                                   style={{ color: textColor }}
+//                                 >
+//                                   {item.item_title}
+//                                 </div>
+//                                 <div
+//                                   className="text-xs font-semibold"
+//                                   style={{ color: secondaryTextColor }}
+//                                 >
+//                                   Checklist {item.checklist?.id} •{" "}
+//                                   {stageLabel}
+//                                 </div>
+//                               </td>
+//                               <td className="px-6 py-4 align-top">
+//                                 <span
+//                                   className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-black"
+//                                   style={{
+//                                     background: col.gradient,
+//                                     color: "#ffffff",
+//                                   }}
+//                                 >
+//                                   {titleCaseStatus(item.item_status)}
+//                                 </span>
+//                               </td>
+//                               <td className="px-6 py-4 align-top">
+//                                 <div
+//                                   className="text-xs font-semibold"
+//                                   style={{ color: secondaryTextColor }}
+//                                 >
+//                                   {buildLocationLabel(
+//                                     item.location,
+//                                     flatLookup
+//                                   )}
+//                                 </div>
+//                                  {(() => {
+//                                   const loc = item.location || {};
+//                                   const roomCat =
+//                                     loc.room_category ||
+//                                     loc.room_type ||
+//                                     loc.room ||
+//                                     null;
+//                                   return roomCat ? (
+//                                     <div
+//                                       className="text-[11px] mt-1"
+//                                       style={{ color: secondaryTextColor }}
+//                                     >
+//                                       Room: {roomCat}
+//                                     </div>
+//                                   ) : null;
+//                                 })()}
+//                               </td>
+//                               <td className="px-6 py-4 align-top">
+//                                 <div className="flex flex-col gap-1 text-xs font-semibold">
+//                                   {["maker", "supervisor", "checker"].map(
+//                                     (rKey) => {
+//                                       const rBlock =
+//                                         item.roles && item.roles[rKey];
+//                                       if (!rBlock || !rBlock.user_id)
+//                                         return null;
+//                                       const name = resolveUserName(
+//                                         rBlock.user_id
+//                                       );
+//                                       return (
+//                                         <div
+//                                           key={rKey}
+//                                           style={{
+//                                             color: secondaryTextColor,
+//                                           }}
+//                                         >
+//                                           <span className="uppercase font-black">
+//                                             {rKey
+//                                               .slice(0, 1)
+//                                               .toUpperCase() +
+//                                               rKey.slice(1)}
+//                                             :
+//                                           </span>{" "}
+//                                           <span
+//                                             style={{ color: textColor }}
+//                                           >
+//                                             {name}
+//                                           </span>
+//                                           {name &&
+//                                             !name.startsWith("User #") && (
+//                                               <span className="text-[10px] opacity-50">
+//                                                 {" "}
+//                                                 #{rBlock.user_id}
+//                                               </span>
+//                                             )}
+//                                         </div>
+//                                       );
+//                                     }
+//                                   )}
+//                                   {!item.roles && (
+//                                     <span
+//                                       style={{ color: secondaryTextColor }}
+//                                     >
+//                                       No team assigned
+//                                     </span>
+//                                   )}
+//                                 </div>
+//                               </td>
+//                               <td className="px-6 py-4 align-top">
+//                                 <div
+//                                   className="text-xs font-semibold"
+//                                   style={{ color: secondaryTextColor }}
+//                                 >
+//                                   {formatDateTime(lastTime)}
+//                                 </div>
+//                                 {latest.attempts && (
+//                                   <div
+//                                     className="text-xs font-bold"
+//                                     style={{ color: textColor }}
+//                                   >
+//                                     Attempts: {latest.attempts}
+//                                   </div>
+//                                 )}
+//                               </td>
+//                             </tr>
+//                           );
+//                         })
+//                       )}
+//                     </tbody>
+//                   </table>
+//                 </div>
+//               </div>
+//             </div>
+//           </div>
+//         )}
+//       </div>
+//     </div>
+//   );
+// };
+
+// export default ProjectOverview;
+
+
+// src/components/ProjectOverview.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import axios from "axios";
+import toast from "react-hot-toast";
+import { useTheme } from "../ThemeContext";
+import { exportReportNewExcel } from "../utils/exportReportNewExcel";
+import ProjectOverviewKpi from "./ProjectOverviewKpi";
+
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  Line,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell,
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  ComposedChart,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+   LabelList,
+} from "recharts";
+import { Download } from "lucide-react";
+
+const API_BASE = "https://konstruct.world";
+
+const authHeaders = () => ({
+  Authorization: `Bearer ${
+    localStorage.getItem("ACCESS_TOKEN") ||
+    localStorage.getItem("TOKEN") ||
+    localStorage.getItem("token") ||
+    ""
+  }`,
+});
+
+/* ---------------- utils ---------------- */
+const isStartedItem = (item) => {
+  const st = String(item?.item_status || "").toLowerCase();
+  if (st === "started") return true;
+  const hasSub = !!item?.latest_submission;
+  return hasSub && st !== "completed" && st !== "not_started";
+};
+
+const matchesStatusFilter = (item, status) => {
+  const s = String(status || "").toLowerCase();
+  if (!s) return true;
+
+  const st = String(item?.item_status || "").toLowerCase();
+  if (s === "started") return isStartedItem(item);
+  return st === s;
+};
+
+function safeNumber(n, fallback = 0) {
+  if (typeof n === "number" && !Number.isNaN(n)) return n;
+  const parsed = Number(n);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function pct(part, total) {
+  const p = safeNumber(part);
+  const t = safeNumber(total);
+  if (!t || t <= 0) return 0;
+  return Math.round((p / t) * 100);
+}
+
+function fmtInt(n) {
+  return safeNumber(n).toLocaleString("en-IN");
+}
+
+function titleCaseStatus(status) {
+  if (!status) return "-";
+  const s = String(status).toLowerCase();
+  if (s === "pending_for_inspector") return "Pending For Checker";
+  return s
+    .split("_")
+    .map((x) => x.charAt(0).toUpperCase() + x.slice(1))
+    .join(" ");
+}
+
+function statusColor(status) {
+  const s = String(status || "").toLowerCase();
+  if (s === "completed") return { text: "#047857", chartColor: "#10b981" };
+  if (s === "pending_checker" || s === "pending_for_checker")
+    return { text: "#1d4ed8", chartColor: "#3b82f6" };
+  if (s === "pending_for_inspector")
+    return { text: "#c2410c", chartColor: "#f97316" };
+  if (s === "not_started" || s === "created")
+    return { text: "#475569", chartColor: "#94a3b8" };
+  return { text: "#475569", chartColor: "#94a3b8" };
+}
+
+function formatDateTime(dt) {
+  if (!dt) return "-";
+  const d = new Date(dt);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString();
+}
+
+function buildLocationLabel(loc, flatLookup = {}) {
+  if (!loc) return "-";
+  const parts = [];
+  const flatMeta = loc.flat_id ? flatLookup[loc.flat_id] : null;
+
+  if (flatMeta) {
+    parts.push(
+      `Flat ${flatMeta.number}${flatMeta.typeName ? ` (${flatMeta.typeName})` : ""}`
+    );
+  } else if (loc.flat_id) {
+    parts.push(`Flat-${loc.flat_id}`);
+  }
+
+  if (flatMeta?.levelName) parts.push(flatMeta.levelName);
+  else if (loc.level_id) parts.push(`Level-${loc.level_id}`);
+
+  return parts.length ? parts.join(" / ") : "-";
+}
+
+function buildSummaryFromItems(items) {
+  const byStatus = {};
+  let totalWithSubmission = 0;
+  const byStageMap = {};
+  const roleSummary = {};
+
+  items.forEach((item) => {
+    const status = String(item.item_status || "").toLowerCase() || "unknown";
+    byStatus[status] = (byStatus[status] || 0) + 1;
+
+    if (item.latest_submission) totalWithSubmission += 1;
+
+    const stageId = item.checklist?.stage_id;
+    if (stageId != null) {
+      let stageRec = byStageMap[stageId];
+      if (!stageRec) {
+        stageRec = { stage_id: stageId, items: 0, by_latest_status: {} };
+        byStageMap[stageId] = stageRec;
+      }
+      stageRec.items += 1;
+      stageRec.by_latest_status[status] =
+        (stageRec.by_latest_status[status] || 0) + 1;
+    }
+
+    const rolesObj = item.roles || {};
+    Object.entries(rolesObj).forEach(([rk, info]) => {
+      if (!info || !info.user_id) return;
+      const key = rk.toUpperCase();
+      let rRec = roleSummary[key];
+      if (!rRec) {
+        rRec = { items_touched: 0, distinct_users: 0, _userIds: new Set() };
+        roleSummary[key] = rRec;
+      }
+      rRec.items_touched += 1;
+      rRec._userIds.add(info.user_id);
+    });
+  });
+
+  Object.values(roleSummary).forEach((r) => {
+    r.distinct_users = r._userIds.size;
+    delete r._userIds;
+  });
+
+  return {
+    total_items: items.length,
+    total_with_submission: totalWithSubmission,
+    by_latest_status: byStatus,
+    by_stage: Object.values(byStageMap),
+    roles: roleSummary,
+  };
+}
+
+const pendingFromLabel = (statusCounts = {}) => {
+  if ((statusCounts.not_started || 0) > 0 || (statusCounts.created || 0) > 0)
+    return "Initializer";
+  if (
+    (statusCounts.pending_for_maker || 0) > 0 ||
+    (statusCounts.pending_maker || 0) > 0 ||
+    (statusCounts.started || 0) > 0
+  )
+    return "Maker";
+  if ((statusCounts.pending_for_inspector || 0) > 0) return "Inspector";
+  if (
+    (statusCounts.pending_checker || 0) > 0 ||
+    (statusCounts.pending_for_checker || 0) > 0
+  )
+    return "Checker";
+  return "";
+};
+
+const sortRowsByTowerUnit = (rows = []) => {
+  const unitNum = (v) => {
+    const n = Number(String(v ?? "").replace(/[^\d]/g, ""));
+    return Number.isNaN(n) ? 0 : n;
+  };
+
+  rows.sort((a, b) => {
+    const t = String(a?.[0] ?? "").localeCompare(String(b?.[0] ?? ""));
+    if (t) return t;
+
+    const ua = unitNum(a?.[1]);
+    const ub = unitNum(b?.[1]);
+    if (ua !== ub) return ua - ub;
+
+    const c = String(a?.[2] ?? "").localeCompare(String(b?.[2] ?? ""));
+    if (c) return c;
+
+    return String(a?.[3] ?? "").localeCompare(String(b?.[3] ?? ""));
+  });
+
+  return rows;
+};
+
+export function buildHotoRowsFromItems(
+  items,
+  { stageMap, flatLookup, buildingNameMap, getChecklistLabel } = {}
+) {
+  const map = new Map();
+
+  (items || []).forEach((it) => {
+    const loc = it.location || {};
+    const flatId = loc.flat_id;
+    const meta = flatId ? flatLookup?.[flatId] : null;
+
+    const towerRaw =
+      loc.tower_name ||
+      loc.building_name ||
+      (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
+      (loc.building_id ? `Building #${loc.building_id}` : "");
+
+    const unitRaw = meta?.number || flatId || "";
+
+    const stageId = it.checklist?.stage_id || "";
+    const stageRaw = stageMap?.[stageId] || stageId || "";
+
+    const checklistRaw = getChecklistLabel
+      ? getChecklistLabel(it)
+      : it.checklist?.title || it.checklist?.name || "";
+
+    const tower = String(towerRaw || "").trim();
+    const unitNo = String(unitRaw || "").trim();
+    const stage = String(stageRaw || "").trim();
+    const checklist = String(checklistRaw || "").trim();
+
+    const key = `${tower}|${unitNo}|${checklist}|${stage}`;
+
+    const rec =
+      map.get(key) || {
+        tower,
+        unitNo,
+        checklist,
+        stage,
+        total: 0,
+        completed: 0,
+        statusCounts: {},
+      };
+    rec.total += 1;
+
+    const st = String(it.item_status || "").toLowerCase();
+    rec.statusCounts[st] = (rec.statusCounts[st] || 0) + 1;
+    if (st === "completed") rec.completed += 1;
+
+    map.set(key, rec);
+  });
+
+  const rows = Array.from(map.values()).map((r) => {
+    const pending = r.total - r.completed;
+    return [
+      r.tower,
+      r.unitNo,
+      r.checklist,
+      r.stage,
+      r.total,
+      r.completed,
+      pending,
+      "",
+      pending > 0 ? "Pending" : "Completed",
+      pendingFromLabel(r.statusCounts),
+    ];
+  });
+
+  return sortRowsByTowerUnit(rows);
+}
+
+export function buildSnaggingRowsFromItems(
+  items,
+  { stageMap, flatLookup, buildingNameMap, getChecklistLabel } = {}
+) {
+  const map = new Map();
+  const norm = (s) => String(s || "").toLowerCase().trim();
+
+  const towerLabel = (loc = {}) =>
+    String(
+      (loc.tower_name ||
+        loc.building_name ||
+        (loc.building_id && buildingNameMap?.get?.(String(loc.building_id))) ||
+        (loc.building_id ? `Building #${loc.building_id}` : "")) || ""
+    ).trim();
+
+  const unitLabel = (flatId, meta) => String(meta?.number || flatId || "").trim();
+
+  const stageLabel = (it) => {
+    const sid = it?.checklist?.stage_id;
+    return String(stageMap?.[sid] || sid || "").trim();
+  };
+
+  const checklistLabel = (it) =>
+    String(
+      (getChecklistLabel ? getChecklistLabel(it) : "") ||
+        it?.checklist?.title ||
+        it?.checklist?.name ||
+        ""
+    ).trim();
+
+  const toTime = (v) => {
+    const t = v ? new Date(v).getTime() : 0;
+    return Number.isNaN(t) ? 0 : t;
+  };
+
+  (items || []).forEach((it) => {
+    const loc = it.location || {};
+    const flatId = loc.flat_id;
+    const meta = flatId ? flatLookup?.[flatId] : null;
+
+    const tower = towerLabel(loc);
+    const unitNo = unitLabel(flatId, meta);
+    const stage = stageLabel(it);
+    const checklist = checklistLabel(it);
+
+    const key = `${tower}|${unitNo}|${checklist}|${stage}`;
+
+    const rec =
+      map.get(key) || {
+        tower,
+        unitNo,
+        checklist,
+        stage,
+        totalCp: 0,
+        checkerChecked: 0,
+        rejectedTotal: 0,
+        makerPending: 0,
+        makerDone: 0,
+        checkerPending: 0,
+        checkerDone: 0,
+        attemptsMax: 0,
+      };
+
+    rec.totalCp += 1;
+
+    const st = norm(it?.item_status);
+    const latest = it?.latest_submission || {};
+
+    const checkedAt = toTime(latest.checked_at);
+    const makerAt = toTime(latest.maker_at);
+    const attempts = Number(latest.attempts || 0);
+    rec.attemptsMax = Math.max(rec.attemptsMax, Number.isNaN(attempts) ? 0 : attempts);
+
+    const isClosed = st === "completed";
+
+    const checkerTouched =
+      !!checkedAt ||
+      isClosed ||
+      st === "pending_for_maker" ||
+      st === "pending_maker" ||
+      st === "pending_for_checker" ||
+      st === "pending_for_inspector" ||
+      st === "pending_checker";
+
+    if (checkerTouched) rec.checkerChecked += 1;
+
+    const everRejected =
+      attempts > 0 ||
+      st === "pending_for_maker" ||
+      st === "pending_maker" ||
+      st === "pending_for_checker" ||
+      st === "pending_for_inspector";
+
+    if (everRejected) {
+      rec.rejectedTotal += 1;
+
+      if (!isClosed && (makerAt === 0 || makerAt <= checkedAt)) {
+        rec.makerPending += 1;
+      } else {
+        rec.makerDone += 1;
+
+        if (isClosed) rec.checkerDone += 1;
+        else rec.checkerPending += 1;
+      }
+    }
+
+    map.set(key, rec);
+  });
+
+  const rows = Array.from(map.values()).map((r) => {
+    const cpPending = r.totalCp - r.checkerChecked;
+
+    const totalSnagPoints = r.makerPending + r.checkerPending;
+    const totalRejectedByChecker = r.rejectedTotal;
+
+    const checkerCheckPct =
+      r.totalCp > 0 ? Math.round((r.checkerChecked / r.totalCp) * 100) : 0;
+
+    const makerDen = r.makerDone + r.makerPending;
+    const makerPct = makerDen > 0 ? Math.round((r.makerDone / makerDen) * 100) : 0;
+
+    const checkerDen = r.checkerDone + r.checkerPending;
+    const checkerPct =
+      checkerDen > 0 ? Math.round((r.checkerDone / checkerDen) * 100) : 0;
+
+    let status = "Completed";
+    let pendingFrom = "";
+    if (cpPending > 0) {
+      status = "Pending by Checker";
+      pendingFrom = "Checker";
+    } else if (r.makerPending > 0) {
+      status = "Pending by Maker";
+      pendingFrom = "Maker";
+    } else if (r.checkerPending > 0) {
+      status = "Pending by Checker";
+      pendingFrom = "Checker";
+    }
+
+    const overallDone = r.totalCp - (cpPending + totalSnagPoints);
+    const overallPct =
+      r.totalCp > 0 ? Math.round((overallDone / r.totalCp) * 100) : 0;
+
+    return [
+      r.tower,
+      r.unitNo,
+      r.checklist,
+      r.stage,
+
+      r.totalCp,
+      r.checkerChecked,
+      cpPending,
+      `${checkerCheckPct}%`,
+
+      totalSnagPoints,
+      totalRejectedByChecker,
+
+      r.makerDone,
+      r.makerPending,
+      `${makerPct}%`,
+
+      r.checkerDone,
+      r.checkerPending,
+      `${checkerPct}%`,
+
+      r.attemptsMax || 0,
+      status,
+      pendingFrom,
+      `${overallPct}%`,
+    ];
+  });
+
+  return sortRowsByTowerUnit(rows);
+}
+
+/* ---------------- Pareto ---------------- */
+const PARETO_CATEGORY_MODES = [{ value: "checklist", label: "Checklist Title" }];
+
+function getParetoCategoryLabel(item, flatLookup, mode) {
+  const loc = item.location || {};
+  const cl = item.checklist || {};
+
+  if (mode === "checklist") {
+    const label =
+      cl.category_level3_name ||
+      cl.category_level3_label ||
+      cl.category_level3_title ||
+      (cl.category_level3 && (cl.category_level3.name || cl.category_level3.title)) ||
+      cl.category_level2_name ||
+      cl.category_level2_label ||
+      (cl.category_level2 && (cl.category_level2.name || cl.category_level2.title)) ||
+      cl.category_level1_name ||
+      cl.category_level1_label ||
+      (cl.category_level1 && (cl.category_level1.name || cl.category_level1.title)) ||
+      cl.category_name ||
+      cl.category_label ||
+      cl.category_title ||
+      (cl.category && (cl.category.name || cl.category.title)) ||
+      cl.name ||
+      cl.title ||
+      null;
+
+    if (label) return String(label);
+    if (cl.id) return `Checklist #${cl.id}`;
+    return "Unmapped Checklist";
+  }
+
+  const label = loc.room_category || loc.room_type || loc.room || null;
+  return label || "Other";
+}
+
+const CORE_ROLES_FOR_HEAD = [
+  "MAKER",
+  "SUPERVISOR",
+  "CHECKER",
+  "PROJECT_MANAGER",
+  "PROJECT_HEAD",
+  "MANAGER",
+  "HEAD",
+];
+
+const CHART_COLORS = {
+  primary: "#4f46e5",
+  secondary: "#2563eb",
+  success: "#16a34a",
+  warning: "#f97316",
+  danger: "#dc2626",
+  muted: "#94a3b8",
+};
+
+const UNIT_STATUS_VIEWS = [
+  { value: "donut", label: "Donut" },
+  { value: "pie", label: "Pie" },
+  { value: "bar", label: "Bar" },
+];
+
+const QUESTION_STATUS_VIEWS = [
+  { value: "pie", label: "Pie" },
+  { value: "donut", label: "Donut" },
+  { value: "bar", label: "Bar" },
+];
+
+const FLATS_SUMMARY_COLORS = {
+  total: CHART_COLORS.danger,        // red
+  initiated: CHART_COLORS.warning,   // orange
+  snag: "#eab308",                   // yellow
+  desnag: CHART_COLORS.success,      // green
+  pendingForSnag: "#f59e0b",         // yellow/orange shade
+  yetToStart: CHART_COLORS.muted,    // optional (if you ever show it)
+};
+
+const Card = ({ theme, children, className = "" }) => (
+  <div
+    className={`rounded-2xl border backdrop-blur-sm ${className}`}
+    style={{
+      background: theme === "dark" ? "rgba(15,23,42,0.70)" : "rgba(255,255,255,0.95)",
+      borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+    }}
+  >
+    {children}
+  </div>
+);
+
+const Label = ({ theme, children }) => (
+  <div
+    className="text-[11px] font-semibold mb-1"
+    style={{ color: theme === "dark" ? "#94a3b8" : "#64748b" }}
+  >
+    {children}
+  </div>
+);
+
+const Select = ({ theme, value, onChange, children, multiple = false, className = "" }) => (
+  <select
+    multiple={multiple}
+    value={value}
+    onChange={onChange}
+    className={`w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none ${className}`}
+    style={{
+      borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+      background: theme === "dark" ? "rgba(2,6,23,0.6)" : "rgba(248,250,252,0.95)",
+      color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+      minHeight: multiple ? "70px" : undefined,
+    }}
+  >
+    {children}
+  </select>
+);
+
+/* ---------- Checkbox MultiSelect Dropdown (Search + Select All + Clear) ---------- */
+const MultiSelectDropdown = ({
+  theme,
+  label,
+  options,
+  value,
+  onChange,
+  placeholder = "All",
+  disabled = false,
+  className = "",
+}) => {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const ref = useRef(null);
+
+  const valSet = useMemo(() => new Set((value || []).map(String)), [value]);
+  const filtered = useMemo(() => {
+    const s = String(q || "").toLowerCase().trim();
+    if (!s) return options || [];
+    return (options || []).filter((o) => String(o.label || "").toLowerCase().includes(s));
+  }, [options, q]);
+
+  const allIds = useMemo(() => (options || []).map((o) => String(o.id)), [options]);
+  const allSelected = useMemo(() => allIds.length > 0 && allIds.every((id) => valSet.has(id)), [allIds, valSet]);
+
+  useEffect(() => {
+    const onDoc = (e) => {
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  const toggleId = (id) => {
+    const next = new Set(valSet);
+    const sid = String(id);
+    if (next.has(sid)) next.delete(sid);
+    else next.add(sid);
+    onChange(Array.from(next));
+  };
+
+  const selectedCount = (value || []).length;
+
+  return (
+    <div className={`relative ${className}`} ref={ref}>
+      <Label theme={theme}>{label}</Label>
+
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((o) => !o)}
+        className="w-full h-[42px] px-3 rounded-xl border text-sm font-extrabold flex items-center justify-between gap-2"
+        style={{
+          borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+          background: theme === "dark" ? "rgba(2,6,23,0.6)" : "rgba(248,250,252,0.95)",
+          color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+          opacity: disabled ? 0.6 : 1,
+        }}
+      >
+        <span className="truncate">
+          {selectedCount === 0 ? placeholder : `${selectedCount} selected`}
+        </span>
+        <span className="text-xs" style={{ opacity: 0.8 }}>
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div
+          className="absolute z-30 mt-2 w-full rounded-2xl border shadow-xl overflow-hidden"
+          style={{
+            borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+            background: theme === "dark" ? "rgba(15,23,42,0.98)" : "rgba(255,255,255,0.98)",
+          }}
+        >
+          <div className="p-3 border-b flex items-center gap-2" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search..."
+              className="w-full px-3 py-2 rounded-xl border text-sm font-semibold outline-none"
+              style={{
+                borderColor: theme === "dark" ? "#475569" : "#cbd5e1",
+                background: theme === "dark" ? "rgba(2,6,23,0.55)" : "rgba(248,250,252,0.95)",
+                color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+              }}
+            />
+          </div>
+
+          <div className="px-3 py-2 flex items-center justify-between gap-2 border-b" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+            <button
+              type="button"
+              onClick={() => onChange(allSelected ? [] : allIds)}
+              className="px-3 py-1.5 rounded-xl text-xs font-black border"
+              style={{
+                borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+                color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+              }}
+            >
+              {allSelected ? "Unselect all" : "Select all"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="px-3 py-1.5 rounded-xl text-xs font-black border"
+              style={{
+                borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+                color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+              }}
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="max-h-[260px] overflow-auto p-2">
+            {(filtered || []).length === 0 ? (
+              <div className="px-3 py-6 text-sm font-semibold opacity-70">No options</div>
+            ) : (
+              filtered.map((o) => {
+                const sid = String(o.id);
+                const checked = valSet.has(sid);
+                return (
+                  <label
+                    key={sid}
+                    className="flex items-center gap-2 px-2 py-2 rounded-xl cursor-pointer"
+                    style={{
+                      background: checked
+                        ? theme === "dark"
+                          ? "rgba(37,99,235,0.15)"
+                          : "rgba(37,99,235,0.08)"
+                        : "transparent",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleId(sid)}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm font-semibold truncate">{o.label}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+
+          <div className="p-2 border-t" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="w-full h-[40px] rounded-xl text-sm font-black border"
+              style={{
+                borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+                color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+              }}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ProjectOverview = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { theme } = useTheme();
+  const location = useLocation();
+ // ✅ Donut API (unit-stage-role-summary)
+  const [unitStageSummary, setUnitStageSummary] = useState(null);
+  const [unitStageLoading, setUnitStageLoading] = useState(false);
+  const [unitStageError, setUnitStageError] = useState("");
+  // ✅ Tower-wise stacked chart API
+const [towerSummary, setTowerSummary] = useState(null);
+const [towerLoading, setTowerLoading] = useState(false);
+const [towerError, setTowerError] = useState("");
+
+// ✅ TAT + Aging API (Role/User wise)
+const [tatAging, setTatAging] = useState(null);
+const [tatAgingLoading, setTatAgingLoading] = useState(false);
+const [tatAgingError, setTatAgingError] = useState("");
+
+const [unitStatusView, setUnitStatusView] = useState("donut");     // donut | pie | bar
+const [questionStatusView, setQuestionStatusView] = useState("pie"); // pie | donut | bar
+
+
+// ✅ Flats Summary Drilldown
+const flatsSummaryRef = useRef(null);
+
+const [flatsDrill, setFlatsDrill] = useState({
+  view: "summary",          // "summary" | "units" | "rooms" | "questions"
+  bucketKey: null,
+  bucketLabel: "",
+  loading: false,
+  error: "",
+
+  units: [],
+  detailItems: [],
+  unitDetailMap: {},
+
+  selectedUnitId: null,
+  selectedUnitLabel: "",
+  rooms: [],
+
+  // ✅ NEW (for room → pending questions drill)
+  roomQuestionMap: {},      // { [roomKey]: questions[] } (built from unitDetail.rooms)
+  selectedRoomKey: null,
+  selectedRoomLabel: "",
+  pendingQuestions: [],     // [{ title, status }]
+});
+
+// Summary-bar key -> API bucket mapping
+const FLATS_BUCKET_MAP = {
+  total: null,                 // total ka detail usually nahi hota
+  initiated: "initialised",    // if backend supports
+  pendingForSnag: "yet_to_verify",
+  snag: "work_in_progress",
+  desnag: "complete",
+  yetToStart: "pending_yet_to_start",
+};
+const buildRoomRowsFromItems = (items = [], unitId) => {
+  const map = new Map();
+
+  (items || []).forEach((it) => {
+    const loc = it?.location || {};
+    const uid = loc.flat_id || loc.unit_id; // backend usually flat_id
+
+    if (!uid || String(uid) !== String(unitId)) return;
+
+    const room =
+      String(loc.room_category || loc.room_type || loc.room || "Other").trim() || "Other";
+
+    const st = String(it?.item_status || "").toLowerCase();
+
+    const rec =
+      map.get(room) || {
+        room,
+        total_items: 0,
+        not_started: 0,
+        maker_pending: 0,
+        checker_pending: 0,
+        completed: 0,
+        other: 0,
+      };
+
+    rec.total_items += 1;
+
+    if (st === "completed") rec.completed += 1;
+    else if (st === "not_started" || st === "created") rec.not_started += 1;
+    else if (st === "pending_for_maker" || st === "pending_maker" || st === "started")
+      rec.maker_pending += 1;
+    else if (st === "pending_checker" || st === "pending_for_checker" || st === "pending_for_inspector")
+      rec.checker_pending += 1;
+    else rec.other += 1;
+
+    map.set(room, rec);
+  });
+
+  const rows = Array.from(map.values());
+  rows.forEach((r) => (r.open = r.not_started + r.maker_pending + r.checker_pending + r.other));
+  rows.sort((a, b) => b.open - a.open || b.total_items - a.total_items || String(a.room).localeCompare(String(b.room)));
+  return rows;
+};
+
+const buildRoomRowsFromUnitDetail = (unitDetail) => {
+  const rooms = Array.isArray(unitDetail?.rooms) ? unitDetail.rooms : [];
+  if (!rooms.length) return [];
+
+  const rows = rooms.map((r) => {
+    const roomName = String(r?.room_label || `Room #${r?.room_id || "-"}`).trim();
+
+    // flatten questions for this room
+    const questions = [];
+    (r?.by_category || []).forEach((cat) => {
+      (cat?.questions || []).forEach((q) => questions.push(q));
+    });
+
+    const rec = {
+      room_id: r?.room_id,
+      room: roomName,
+      total_items: safeNumber(r?.total ?? questions.length),
+      not_started: 0,
+      maker_pending: 0,
+      checker_pending: 0,
+      completed: 0,
+      other: 0,
+    };
+
+    questions.forEach((q) => {
+      const st = String(q?.item_status || "").toLowerCase();
+
+      if (st === "completed") rec.completed += 1;
+      else if (st === "not_started" || st === "created") rec.not_started += 1;
+      else if (st === "pending_for_maker" || st === "pending_maker" || st === "started")
+        rec.maker_pending += 1;
+      else if (st === "pending_checker" || st === "pending_for_checker" || st === "pending_for_inspector")
+        rec.checker_pending += 1;
+      else rec.other += 1;
+    });
+
+    // ensure total_items is consistent
+    const sum =
+      rec.completed + rec.not_started + rec.maker_pending + rec.checker_pending + rec.other;
+    if (!rec.total_items) rec.total_items = sum;
+
+    rec.open = rec.total_items - rec.completed;
+    return rec;
+  });
+
+  rows.sort(
+    (a, b) =>
+      safeNumber(b.open) - safeNumber(a.open) ||
+      safeNumber(b.total_items) - safeNumber(a.total_items) ||
+      String(a.room).localeCompare(String(b.room))
+  );
+
+  return rows;
+};
+const roomKeyOf = (roomRowOrRoomObj) => {
+  const rid = roomRowOrRoomObj?.room_id ?? roomRowOrRoomObj?.roomId;
+  return rid != null ? String(rid) : String(roomRowOrRoomObj?.room || "Other");
+};
+
+const flattenRoomQuestions = (roomObj) => {
+  const out = [];
+  (roomObj?.by_category || []).forEach((cat) => {
+    (cat?.questions || []).forEach((q) => out.push(q));
+  });
+  return out;
+};
+
+const isPendingQuestion = (st) => String(st || "").toLowerCase() !== "completed";
+
+const buildRoomQuestionMapFromUnitDetail = (unitDetail) => {
+  const map = {};
+  const rooms = Array.isArray(unitDetail?.rooms) ? unitDetail.rooms : [];
+  rooms.forEach((r) => {
+    const key = roomKeyOf(r);
+    map[key] = flattenRoomQuestions(r);
+  });
+  return map;
+};
+
+// ✅ fallback if backend didn’t send rooms/questions
+const pendingQuestionsFromItemsFallback = (items = [], unitId, roomLabel) => {
+  const targetRoom = String(roomLabel || "").toLowerCase().trim();
+
+  return (items || [])
+    .filter((it) => {
+      const loc = it?.location || {};
+      const uid = loc.flat_id || loc.unit_id;
+      if (!uid || String(uid) !== String(unitId)) return false;
+
+      const room =
+        String(loc.room_category || loc.room_type || loc.room || "Other")
+          .toLowerCase()
+          .trim();
+
+      // try match room label; if label empty, accept
+      if (targetRoom && room !== targetRoom) return false;
+
+      return isPendingQuestion(it?.item_status);
+    })
+    .map((it) => ({
+      title: it?.item_title || it?.question_title || "Untitled",
+      status: it?.item_status || "",
+    }));
+};
+
+
+const onFlatUnitBarClick = (barOrWrapper) => {
+  const row = barOrWrapper?.payload || barOrWrapper || {};
+  const unitId = row.unit_id;
+  if (!unitId) return;
+
+  const unitDetail = flatsDrill?.unitDetailMap?.[String(unitId)];
+
+  let roomRows = unitDetail ? buildRoomRowsFromUnitDetail(unitDetail) : [];
+
+  if (!roomRows.length) {
+    const srcItems =
+      flatsDrill.detailItems && flatsDrill.detailItems.length
+        ? flatsDrill.detailItems
+        : (workingItems || []);
+    roomRows = buildRoomRowsFromItems(srcItems, unitId);
+  }
+
+  // ✅ NEW: build room -> questions map (only if unitDetail has rooms)
+  const roomQuestionMap = unitDetail ? buildRoomQuestionMapFromUnitDetail(unitDetail) : {};
+
+  setFlatsDrill((p) => ({
+    ...p,
+    view: "rooms",
+    selectedUnitId: unitId,
+    selectedUnitLabel: row.unit_label || flatLabel(unitId),
+    rooms: roomRows,
+    roomQuestionMap,            // ✅ add
+    selectedRoomKey: null,      // ✅ reset
+    selectedRoomLabel: "",
+    pendingQuestions: [],       // ✅ reset
+    error: roomRows.length ? "" : "No room-wise data found for this flat.",
+  }));
+};
+
+const FLATS_BUCKET_LABEL = {
+  initialised: "Initiated Flats",
+  yet_to_verify: "Pending For Snag",
+  work_in_progress: "Snag Flats",
+  complete: "Desnag (Complete)",
+  pending_yet_to_start: "Yet To Start",
+};
+
+const extractDetailUnits = (apiData, bucketKey) => {
+  const block = apiData?.[`${bucketKey}_detail`];
+
+  const units = Array.isArray(block?.units) ? block.units : [];
+  const items = Array.isArray(block?.items) ? block.items : [];
+
+  // ✅ map unit_id -> full unit object (contains rooms[])
+  const unitDetailMap = {};
+  units.forEach((u) => {
+    const uid = u?.unit_id || u?.unit_summary?.unit_id;
+    if (uid != null) unitDetailMap[String(uid)] = u;
+  });
+
+  const rows = units.map((u) => {
+    const us = u?.unit_summary || {};
+    const uid = u?.unit_id || us?.unit_id;
+
+    return {
+      unit_id: uid,
+      unit_label: flatLabel(uid),
+      total_items: safeNumber(us.total_items),
+      not_started: safeNumber(us.not_started),
+      maker_pending: safeNumber(us.maker_side_pending),
+      checker_pending: safeNumber(us.checker_pending),
+      completed: safeNumber(us.completed),
+      pending_from: us.pending_from || "",
+    };
+  });
+
+  return { rows, items, unitDetailMap };
+};
+
+
+const fetchFlatsBucketDetail = async (bucketKey) => {
+  if (!bucketKey) return;
+
+  setFlatsDrill((p) => ({
+  ...p,
+  view: "units", // ✅ IMPORTANT: leave summary immediately
+  bucketKey,
+  bucketLabel: FLATS_BUCKET_LABEL[bucketKey] || bucketKey,
+  loading: true,
+  error: "",
+  units: [],
+  detailItems: [],
+  unitDetailMap: {},     // ✅ add
+  selectedUnitId: null,
+  selectedUnitLabel: "",
+  rooms: [],
+}));
+
+
+  try {
+    const params = { project_id: id };
+
+    // keep same filters as chart
+    if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
+    if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
+
+    // ✅ request detail for clicked bucket
+    // backend supports "detail_buckets" (seen in meta)
+    params.detail_buckets = bucketKey;
+    params.include_questions = true;
+    params.include_room_stats = true; // if backend ignores, no harm
+
+    const res = await axios.get(
+      `${API_BASE}/checklists/api/dashboard/unit-stage-role-summary/by-tower/`,
+      { params, headers: authHeaders() }
+    );
+
+const { rows, items, unitDetailMap } = extractDetailUnits(res.data, bucketKey);
+
+    if (!rows.length) {
+      setFlatsDrill((p) => ({
+        ...p,
+        loading: false,
+        error: "No detail available for this bar (bucket).",
+        units: [],
+      }));
+      return;
+    }
+
+    setFlatsDrill((p) => ({
+  ...p,
+  view: "units",
+  loading: false,
+  units: rows,
+  detailItems: items, // ✅ store item-level for room drill
+    unitDetailMap,     // ✅ add
+
+  error: "",
+}));
+  } catch (e) {
+    const msg =
+      e?.response?.data?.detail ||
+      e?.response?.data?.message ||
+      "Failed to load flats detail.";
+    setFlatsDrill((p) => ({ ...p, loading: false, error: msg, units: [] }));
+  }
+};
+
+const onFlatsSummaryBarClick = (barOrWrapper) => {
+  const row = barOrWrapper?.payload || barOrWrapper || {};
+  const summaryKey = row.key;
+  const bucketKey = FLATS_BUCKET_MAP[summaryKey];
+  if (!bucketKey) return;
+  fetchFlatsBucketDetail(bucketKey);
+};
+
+
+const resetFlatsDrill = () => {
+  setFlatsDrill({
+    view: "summary",
+    bucketKey: null,
+    bucketLabel: "",
+    loading: false,
+    error: "",
+    units: [],
+    detailItems: [],
+    unitDetailMap: {},
+    selectedUnitId: null,
+    selectedUnitLabel: "",
+    rooms: [],
+
+    roomQuestionMap: {},      // ✅ add
+    selectedRoomKey: null,    // ✅ add
+    selectedRoomLabel: "",    // ✅ add
+    pendingQuestions: [],     // ✅ add
+  });
+};
+
+
+const backFromRoomsToUnits = () => {
+  setFlatsDrill((p) => ({
+    ...p,
+    view: "units",
+    selectedUnitId: null,
+    selectedUnitLabel: "",
+    rooms: [],
+  }));
+};
+
+
+// ✅ Simple "Export PDF" (print this chart only)
+const handleFlatsSummaryExportPDF = () => {
+  const node = flatsSummaryRef.current;
+  if (!node) return;
+
+  const win = window.open("", "PRINT", "height=700,width=1100");
+  if (!win) return;
+
+  win.document.write(`
+    <html>
+      <head>
+        <title>Flats Summary</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 16px; }
+          .wrap { width: 100%; }
+          @page { size: A4 landscape; margin: 12mm; }
+        </style>
+      </head>
+      <body>
+        <div class="wrap">
+          ${node.innerHTML}
+        </div>
+      </body>
+    </html>
+  `);
+
+  win.document.close();
+  win.focus();
+  win.print();
+  win.close();
+};
+
+const backFromQuestionsToRooms = () => {
+  setFlatsDrill((p) => ({
+    ...p,
+    view: "rooms",
+    selectedRoomKey: null,
+    selectedRoomLabel: "",
+    pendingQuestions: [],
+  }));
+};
+
+const onRoomBarClick = (barOrWrapper) => {
+  const row = barOrWrapper?.payload || barOrWrapper || {};
+  const unitId = flatsDrill?.selectedUnitId;
+  if (!unitId) return;
+
+  const roomKey = roomKeyOf(row);
+  const roomLabel = row?.room || row?.room_label || `Room ${roomKey}`;
+
+  // ✅ prefer backend questions (unitDetail.rooms)
+  let qsRaw = flatsDrill?.roomQuestionMap?.[roomKey] || [];
+
+  // ✅ fallback to items if backend didn’t send questions
+  if (!qsRaw.length) {
+    const srcItems =
+      flatsDrill.detailItems && flatsDrill.detailItems.length
+        ? flatsDrill.detailItems
+        : (workingItems || []);
+    const fallback = pendingQuestionsFromItemsFallback(srcItems, unitId, roomLabel);
+    setFlatsDrill((p) => ({
+      ...p,
+      view: "questions",
+      selectedRoomKey: roomKey,
+      selectedRoomLabel: roomLabel,
+      pendingQuestions: fallback,
+      error: "",
+    }));
+    return;
+  }
+
+  const pending = qsRaw
+    .filter((q) => isPendingQuestion(q?.item_status))
+    .map((q) => ({
+      title: q?.item_title || q?.question_title || q?.title || "Untitled",
+      status: q?.item_status || "",
+    }));
+
+  setFlatsDrill((p) => ({
+    ...p,
+    view: "questions",
+    selectedRoomKey: roomKey,
+    selectedRoomLabel: roomLabel,
+    pendingQuestions: pending,
+    error: "",
+  }));
+};
+
+
+  const [stats, setStats] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [userMap, setUserMap] = useState({});
+  const [stageMap, setStageMap] = useState({});
+  const [flatLookup, setFlatLookup] = useState({});
+  const [stagePurposeMap, setStagePurposeMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const projectFromState = location.state?.project || null;
+
+  const [viewMode, setViewMode] = useState("head");
+
+  // const [globalFilters, setGlobalFilters] = useState({
+  //   buildingId: "",
+  //   floorId: "",
+  //   flatId: "",
+  //   stageId: "",
+  //   status: "",
+  //   role: "",
+  //   flatCategory: "",
+  //   roomCategory: "",
+  //   timeWindow: "all",
+  // });
+  const [globalFilters, setGlobalFilters] = useState({
+  buildingId: "",
+  floorId: "",
+  flatId: "",
+  stageId: "",
+  status: "",
+  flatCategory: "",
+  roomCategory: "",
+  timeWindow: "all",
+});
+
+
+  const [paretoFilters, setParetoFilters] = useState({
+    categoryMode: "checklist",
+    floorIds: [],
+    focusFlatIds: [],
+  });
+
+  const [questionFilters, setQuestionFilters] = useState({
+    stageId: "",
+    categoryId: "",
+    buildingId: "",
+    floorId: "",
+    roomCategory: "",
+    statusBucket: "open",
+  });
+
+  const textColor = theme === "dark" ? "#e2e8f0" : "#0f172a";
+  const subText = theme === "dark" ? "#94a3b8" : "#64748b";
+
+  useEffect(() => {
+    try {
+      const userDataStr = localStorage.getItem("USER_DATA");
+      const userData = userDataStr ? JSON.parse(userDataStr) : null;
+
+      const roleFromStorage =
+        localStorage.getItem("ROLE") ||
+        userData?.role ||
+        (userData?.roles && userData.roles[0]) ||
+        "";
+
+      const normalizedProjectRoles = Array.isArray(projectFromState?.roles)
+        ? projectFromState.roles.map((r) => (typeof r === "string" ? r : r?.role || ""))
+        : [];
+
+      const allRoleStrings = [roleFromStorage, ...(normalizedProjectRoles || [])]
+        .filter(Boolean)
+        .map((r) => String(r).toLowerCase());
+
+      const isManager =
+        userData?.is_manager ||
+        allRoleStrings.some((r) => ["manager", "project_manager"].some((x) => r.includes(x)));
+
+      const isHead = allRoleStrings.some((r) => ["project_head", "head"].some((x) => r.includes(x)));
+
+      const isSuperAdmin =
+        (typeof roleFromStorage === "string" && roleFromStorage.toLowerCase().includes("super admin")) ||
+        userData?.superadmin === true ||
+        userData?.is_superadmin === true ||
+        userData?.is_staff === true;
+
+      if (isSuperAdmin || isManager) setViewMode("manager");
+      else if (isHead) setViewMode("head");
+      else setViewMode("manager");
+    } catch {
+      setViewMode("head");
+    }
+  }, [projectFromState]);
+
+  const resolveUserName = (uid) => {
+    if (!uid) return "-";
+    return userMap[uid] || `User #${uid}`;
+  };
+
+  const pickPurposeInfo = (it) => {
+    const stageId = it?.checklist?.stage_id;
+    const p = stageId ? stagePurposeMap?.[stageId] : null;
+
+    const label = p?.name
+      ? String(p.name)
+      : String(
+          it?.checklist?.purpose_name ||
+            it?.checklist?.purpose ||
+            it?.purpose_name ||
+            it?.purpose ||
+            "Unassigned"
+        );
+
+    return { key: label.trim().toLowerCase(), label };
+  };
+
+  const [projectBuildings, setProjectBuildings] = useState([]);
+  // ✅ Fetch ONLY donut data from unit-stage-role-summary API
+useEffect(() => {
+  if (!id) return;
+
+  const controller = new AbortController();
+
+  const fetchDonut = async () => {
+    setUnitStageLoading(true);
+    setUnitStageError("");
+
+    try {
+      const params = {
+        project_id: id,
+      };
+
+      // Optional: global filters mapped to this API (safe)
+      if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
+      if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
+      if (globalFilters.flatId) params.unit_id = globalFilters.flatId; // flat == unit
+
+      const res = await axios.get(
+        `${API_BASE}/checklists/api/dashboard/unit-stage-role-summary/`,
+        {
+          params,
+          headers: authHeaders(),
+          signal: controller.signal,
+        }
+      );
+
+      setUnitStageSummary(res.data || null);
+    } catch (err) {
+      // ignore cancel
+      const name = err?.name || "";
+      if (name === "CanceledError" || name === "AbortError") return;
+
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to load donut summary.";
+      setUnitStageError(msg);
+      setUnitStageSummary(null);
+    } finally {
+      setUnitStageLoading(false);
+    }
+  };
+
+  fetchDonut();
+
+  return () => controller.abort();
+}, [id, globalFilters.stageId, globalFilters.buildingId, globalFilters.flatId]);
+
+
+
+// ✅ Fetch Tower-wise stacked chart
+
+// ✅ Fetch Tower-wise stacked chart
+useEffect(() => {
+  if (!id) return;
+
+  const controller = new AbortController();
+
+  const fetchTower = async () => {
+    setTowerLoading(true);
+    setTowerError("");
+
+    try {
+      const params = { project_id: id };
+
+      if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
+      if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
+      if (globalFilters.flatId) params.unit_id = globalFilters.flatId;
+
+      // ✅ ADD THIS: so API returns work_in_progress_detail + wip_unit_ids
+      params.detail_buckets = "work_in_progress";
+      params.include_questions = true;
+
+
+      const res = await axios.get(
+        `${API_BASE}/checklists/api/dashboard/unit-stage-role-summary/by-tower/`,
+        { params, headers: authHeaders(), signal: controller.signal }
+      );
+
+      setTowerSummary(res.data || null);
+    } catch (err) {
+      const name = err?.name || "";
+      if (name === "CanceledError" || name === "AbortError") return;
+
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to load tower chart.";
+      setTowerError(msg);
+      setTowerSummary(null);
+    } finally {
+      setTowerLoading(false);
+    }
+  };
+
+  fetchTower();
+  return () => controller.abort();
+}, [id, globalFilters.stageId, globalFilters.buildingId, globalFilters.flatId]);
+
+// useEffect(() => {
+//   if (!id) return;
+
+//   const controller = new AbortController();
+
+//   const fetchTower = async () => {
+//     setTowerLoading(true);
+//     setTowerError("");
+
+//     try {
+//       const params = { project_id: id };
+
+//       // keep filters same like donut (safe mapping)
+//       if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
+//       if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
+//       if (globalFilters.flatId) params.unit_id = globalFilters.flatId; // flat == unit
+
+//       const res = await axios.get(
+//         `${API_BASE}/checklists/api/dashboard/unit-stage-role-summary/by-tower/`,
+//         {
+//           params,
+//           headers: authHeaders(),
+//           signal: controller.signal,
+//         }
+//       );
+
+//       setTowerSummary(res.data || null);
+//     } catch (err) {
+//       const name = err?.name || "";
+//       if (name === "CanceledError" || name === "AbortError") return;
+
+//       const msg =
+//         err?.response?.data?.detail ||
+//         err?.response?.data?.message ||
+//         "Failed to load tower chart.";
+//       setTowerError(msg);
+//       setTowerSummary(null);
+//     } finally {
+//       setTowerLoading(false);
+//     }
+//   };
+
+//   fetchTower();
+//   return () => controller.abort();
+// }, [id, globalFilters.stageId, globalFilters.buildingId, globalFilters.flatId]);
+
+
+// ✅ Fetch TAT & Aging (Role/User wise)
+useEffect(() => {
+  if (!id) return;
+
+  const controller = new AbortController();
+
+  const fetchTatAging = async () => {
+    setTatAgingLoading(true);
+    setTatAgingError("");
+
+    try {
+      const params = { project_id: id };
+
+      // map global filters to API (safe)
+      if (globalFilters.stageId) params.stage_id = globalFilters.stageId;
+      if (globalFilters.buildingId) params.building_id = globalFilters.buildingId;
+      if (globalFilters.flatId) params.unit_id = globalFilters.flatId;
+
+      params.detail_buckets = "work_in_progress";
+
+      // ✅ Time window -> from_date (optional)
+      if (globalFilters.timeWindow === "30d" || globalFilters.timeWindow === "7d") {
+        const days = globalFilters.timeWindow === "30d" ? 30 : 7;
+        const d = new Date();
+        d.setDate(d.getDate() - days);
+        params.from_date = d.toISOString().slice(0, 10); // YYYY-MM-DD
+      }
+
+      const res = await axios.get(`${API_BASE}/checklists/dashboard/tat-aging/`, {
+        params,
+        headers: authHeaders(),
+        signal: controller.signal,
+      });
+
+      setTatAging(res.data || null);
+    } catch (err) {
+      const name = err?.name || "";
+      if (name === "CanceledError" || name === "AbortError") return;
+
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.message ||
+        "Failed to load TAT & Aging.";
+      setTatAgingError(msg);
+      setTatAging(null);
+    } finally {
+      setTatAgingLoading(false);
+    }
+  };
+
+  fetchTatAging();
+  return () => controller.abort();
+}, [
+  id,
+  globalFilters.stageId,
+  globalFilters.buildingId,
+  globalFilters.flatId,
+  globalFilters.timeWindow,
+]);
+
+
+
+  useEffect(() => {
+    if (!id) return;
+    axios
+      .get(`${API_BASE}/projects/buildings/by_project/${id}/`, { headers: authHeaders() })
+      .then((res) => setProjectBuildings(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setProjectBuildings([]));
+  }, [id]);
+
+  const groupItemsByPurpose = (items = []) => {
+    const map = new Map();
+    items.forEach((it) => {
+      const { key, label } = pickPurposeInfo(it);
+      const rec = map.get(key) || { key, label, items: [] };
+      rec.items.push(it);
+      map.set(key, rec);
+    });
+
+    return Array.from(map.values()).sort(
+      (a, b) => b.items.length - a.items.length || String(a.label).localeCompare(String(b.label))
+    );
+  };
+
+  /* ---------------- data fetch ---------------- */
+  useEffect(() => {
+    const fetchAll = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const [statsRes, usersRes] = await Promise.all([
+          axios.get(`${API_BASE}/checklists/stats/watcher-deep/`, {
+            params: { project_id: id },
+            headers: authHeaders(),
+          }),
+          axios.get(`${API_BASE}/users/users-by-creator/`, { headers: authHeaders() }),
+        ]);
+
+        const statsData = statsRes.data;
+        setStats(statsData);
+
+        const uMap = {};
+        (usersRes.data || []).forEach((u) => {
+          const displayName =
+            (u.first_name && u.first_name.trim()) ||
+            (u.username && u.username.trim()) ||
+            u.email ||
+            `User #${u.id}`;
+          uMap[u.id] = displayName;
+        });
+        setUserMap(uMap);
+        setUsers(usersRes.data || []);
+
+        const phaseSet = new Set();
+        (statsData.items || []).forEach((item) => {
+          const phId = item.checklist?.phase_id;
+          if (phId) phaseSet.add(phId);
+        });
+
+        const phaseIds = Array.from(phaseSet);
+        const newStageMap = {};
+        const newPurposeMap = {};
+
+        if (phaseIds.length > 0) {
+          await Promise.all(
+            phaseIds.map((phaseId) =>
+              axios
+                .get(`${API_BASE}/projects/stages/by_phase/${phaseId}/`, { headers: authHeaders() })
+                .then((resp) => {
+                  (resp.data || []).forEach((stage) => {
+                    if (!stage || stage.id == null) return;
+
+                    newStageMap[stage.id] =
+                      stage.name ||
+                      (stage.stage_name && stage.stage_name.name) ||
+                      `Stage #${stage.id}`;
+
+                    const pObj =
+                      stage?.purpose?.name?.purpose ||
+                      stage?.purpose?.purpose ||
+                      stage?.purpose;
+
+                    const pId = pObj?.id ?? stage?.purpose?.id ?? null;
+                    const pName = pObj?.name ?? pObj?.title ?? null;
+
+                    if (pName || pId) {
+                      newPurposeMap[stage.id] = {
+                        id: pId ? String(pId) : String(pName),
+                        name: String(pName || "Unassigned"),
+                      };
+                    }
+                  });
+                })
+                .catch(() => {})
+            )
+          );
+        }
+
+        setStageMap(newStageMap);
+        setStagePurposeMap(newPurposeMap);
+      } catch (err) {
+        const msg =
+          err?.response?.data?.detail ||
+          err?.response?.data?.message ||
+          "Failed to load project stats.";
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (id) fetchAll();
+  }, [id]);
+
+  // levels-with-flats for flat meta
+  useEffect(() => {
+    if (!stats?.items || !Array.isArray(stats.items)) return;
+
+    const buildingIds = Array.from(
+      new Set(stats.items.map((it) => it.location?.building_id).filter(Boolean))
+    );
+    if (!buildingIds.length) return;
+
+    const fetchLevelsWithFlats = async () => {
+      try {
+        const responses = await Promise.all(
+          buildingIds.map((bid) =>
+            axios.get(`${API_BASE}/projects/levels-with-flats/${bid}/`, { headers: authHeaders() })
+          )
+        );
+
+        const map = {};
+        responses.forEach((res) => {
+          (res.data || []).forEach((level) => {
+            const levelName = level.name;
+            const levelId = level.id;
+            (level.flats || []).forEach((flat) => {
+              map[flat.id] = {
+                number: flat.number,
+                typeName: flat.flattype?.type_name || "",
+                levelName,
+                levelId,
+              };
+            });
+          });
+        });
+
+        setFlatLookup(map);
+      } catch {
+        // silent
+      }
+    };
+
+    fetchLevelsWithFlats();
+  }, [stats]);
+
+  /* ---------------- derived options ---------------- */
+  const projectName =
+    projectFromState?.name || projectFromState?.project_name || `Project #${id}`;
+
+  const distinctStatuses = useMemo(() => {
+    const s = new Set();
+    (stats?.items || []).forEach((item) => {
+      if (item.item_status) s.add(String(item.item_status).toLowerCase());
+    });
+    return Array.from(s);
+  }, [stats]);
+
+  const buildingNameMap = useMemo(() => {
+    const map = new Map();
+    (stats?.buildings || []).forEach((b) => {
+      const bid = b.id || b.building_id;
+      if (!bid) return;
+      map.set(
+        String(bid),
+        String(b.name || b.title || b.building_name || `Building #${bid}`)
+      );
+    });
+
+    (projectBuildings || []).forEach((b) => {
+      if (!b?.id) return;
+      map.set(String(b.id), String(b.name || `Building #${b.id}`));
+    });
+
+    const items = Array.isArray(stats?.items) ? stats.items : [];
+    items.forEach((it) => {
+      const loc = it.location || {};
+      if (!loc.building_id) return;
+      const bid = String(loc.building_id);
+      const label =
+        loc.building_name ||
+        loc.tower_name ||
+        loc.wing ||
+        map.get(bid) ||
+        `Building #${bid}`;
+      map.set(bid, String(label));
+    });
+
+    return map;
+  }, [stats, projectBuildings]);
+
+  const buildingOptions = useMemo(
+    () => Array.from(buildingNameMap.entries()).map(([id, label]) => ({ id, label })),
+    [buildingNameMap]
+  );
+
+  const floorOptions = useMemo(() => {
+    const buildingId = globalFilters.buildingId;
+    if (!buildingId) return [];
+    const items = Array.isArray(stats?.items) ? stats.items : [];
+    const levelsMap = new Map();
+
+    items.forEach((it) => {
+      const loc = it.location || {};
+      if (!loc.flat_id) return;
+      if (!loc.building_id || String(loc.building_id) !== String(buildingId)) return;
+
+      const meta = flatLookup[loc.flat_id];
+      if (!meta?.levelId) return;
+
+      if (!levelsMap.has(meta.levelId)) {
+        levelsMap.set(meta.levelId, {
+          id: String(meta.levelId),
+          label: meta.levelName || `Floor #${meta.levelId}`,
+        });
+      }
+    });
+
+    return Array.from(levelsMap.values()).sort((a, b) =>
+      String(a.label).localeCompare(String(b.label))
+    );
+  }, [stats, globalFilters.buildingId, flatLookup]);
+
+  const flatCategoryOptions = useMemo(() => {
+    const items = Array.isArray(stats?.items) ? stats.items : [];
+    const categories = new Set();
+    items.forEach((it) => {
+      const flatId = it.location?.flat_id;
+      if (!flatId) return;
+      const meta = flatLookup[flatId];
+      const cat = meta?.typeName || null;
+      if (cat) categories.add(String(cat));
+    });
+    return Array.from(categories).sort();
+  }, [stats, flatLookup]);
+
+  const roomCategoryOptions = useMemo(() => {
+    const items = Array.isArray(stats?.items) ? stats.items : [];
+    const categories = new Set();
+    items.forEach((it) => {
+      const loc = it.location || {};
+      const cat = loc.room_category || loc.room_type || loc.room || null;
+      if (cat) categories.add(String(cat));
+    });
+    return Array.from(categories).sort();
+  }, [stats]);
+
+  const checklistCategoryOptions = useMemo(() => {
+    const items = Array.isArray(stats?.items) ? stats.items : [];
+    const map = new Map();
+
+    items.forEach((it) => {
+      const cl = it.checklist || {};
+      const cid = cl.category_id || cl.category || cl.categoryId || cl.category_id_fk || null;
+      if (!cid) return;
+
+      const label =
+        cl.category_name ||
+        cl.category_label ||
+        cl.category_title ||
+        (cl.category && cl.category.name) ||
+        cl.name ||
+        cl.title ||
+        `Category #${cid}`;
+
+      const key = String(cid);
+      if (!map.has(key)) map.set(key, String(label));
+    });
+
+    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
+  }, [stats]);
+
+  /* ---------------- filtering ---------------- */
+  const filteredItemsGlobal = useMemo(() => {
+    const items = Array.isArray(stats?.items) ? stats.items : [];
+    const {
+  buildingId,
+  floorId,
+  flatId,
+  stageId,
+  status,
+  flatCategory,
+  roomCategory,
+  timeWindow,
+} = globalFilters;
+
+
+   if (
+  !status &&
+  !stageId &&
+  !buildingId &&
+  !floorId &&
+  !flatId &&
+  !flatCategory &&
+  !roomCategory &&
+  timeWindow === "all"
+) {
+  return items;
+}
+
+
+    const now = new Date();
+
+    return items.filter((item) => {
+      if (status && !matchesStatusFilter(item, status)) return false;
+
+      // if (role) {
+      //   const rolesObj = item.roles || {};
+      //   const block = rolesObj[role.toLowerCase()];
+      //   if (!block || !block.user_id) return false;
+      // }
+
+      if (stageId) {
+        const sId = item.checklist?.stage_id;
+        if (!sId || String(sId) !== String(stageId)) return false;
+      }
+
+      if (buildingId) {
+        const bId = item.location?.building_id;
+        if (!bId || String(bId) !== String(buildingId)) return false;
+      }
+
+      if (floorId) {
+        const fId = item.location?.flat_id;
+        if (!fId) return false;
+        const meta = flatLookup[fId];
+        const lvl = meta?.levelId ? String(meta.levelId) : "";
+        if (!lvl || lvl !== String(floorId)) return false;
+      }
+
+      if (flatId) {
+        const fId = item.location?.flat_id;
+        if (!fId || String(fId) !== String(flatId)) return false;
+      }
+
+      if (flatCategory) {
+        const itemFlatId = item.location?.flat_id;
+        if (!itemFlatId) return false;
+        const meta = flatLookup[itemFlatId];
+        const cat = meta?.typeName || null;
+        if (!cat || String(cat) !== String(flatCategory)) return false;
+      }
+
+      if (roomCategory) {
+        const loc = item.location || {};
+        const cat = loc.room_category || loc.room_type || loc.room || null;
+        if (!cat || String(cat) !== String(roomCategory)) return false;
+      }
+
+      if (timeWindow !== "all") {
+        const latest = item.latest_submission || {};
+        const lastTimeStr = latest.checked_at || latest.supervised_at || latest.maker_at || null;
+        if (!lastTimeStr) return false;
+
+        const t = new Date(lastTimeStr);
+        if (Number.isNaN(t.getTime())) return false;
+
+        const diffDays = (now - t) / (1000 * 60 * 60 * 24);
+        if (timeWindow === "30d" && diffDays > 30) return false;
+        if (timeWindow === "7d" && diffDays > 7) return false;
+      }
+
+      return true;
+    });
+  }, [stats, globalFilters, flatLookup]);
+
+  const filtersActive = useMemo(() => {
+    const {
+  buildingId,
+  floorId,
+  flatId,
+  stageId,
+  status,
+  flatCategory,
+  roomCategory,
+  timeWindow,
+} = globalFilters;
+
+return (
+  !!buildingId ||
+  !!floorId ||
+  !!flatId ||
+  !!stageId ||
+  !!status ||
+  !!flatCategory ||
+  !!roomCategory ||
+  timeWindow !== "all"
+);
+
+  }, [globalFilters]);
+
+  const workingItems = useMemo(() => {
+    if (filtersActive) return filteredItemsGlobal;
+    return Array.isArray(stats?.items) ? stats.items : [];
+  }, [stats, filteredItemsGlobal, filtersActive]);
+
+  const handleExport = () => {
+    const groups = groupItemsByPurpose(workingItems);
+
+    const sections = groups.map((g) => {
+      const hotoRows = buildHotoRowsFromItems(g.items, {
+        stageMap,
+        flatLookup,
+        buildingNameMap,
+        getChecklistLabel: (it) => it?.checklist?.title || it?.checklist?.name || "",
+      });
+
+      const snaggingRows = buildSnaggingRowsFromItems(g.items, {
+        stageMap,
+        flatLookup,
+        buildingNameMap,
+        getChecklistLabel: (it) => it?.checklist?.title || it?.checklist?.name || "",
+      });
+
+      return {
+        sheetName: g.label,
+        rightTitle: g.label,
+        snaggingRows,
+        rightOnly: true,
+        hotoRows,
+      };
+    });
+
+    exportReportNewExcel({
+      sections,
+      fileName: `Report - ${projectName}.xlsx`,
+      items: workingItems,
+      buildingNameMap,
+    });
+  };
+
+  const itemsForFlatOptions = useMemo(() => {
+    const items = Array.isArray(stats?.items) ? stats.items : [];
+    const { flatId, ...rest } = globalFilters;
+    const gf = { ...rest, flatId: "" };
+
+    const now = new Date();
+    return items.filter((item) => {
+      if (gf.status && !matchesStatusFilter(item, gf.status)) return false;
+
+      // if (gf.role) {
+      //   const rolesObj = item.roles || {};
+      //   const block = rolesObj[gf.role.toLowerCase()];
+      //   if (!block || !block.user_id) return false;
+      // }
+
+      if (gf.stageId) {
+        const sId = item.checklist?.stage_id;
+        if (!sId || String(sId) !== String(gf.stageId)) return false;
+      }
+
+      if (gf.buildingId) {
+        const bId = item.location?.building_id;
+        if (!bId || String(bId) !== String(gf.buildingId)) return false;
+      }
+
+      if (gf.floorId) {
+        const fId = item.location?.flat_id;
+        if (!fId) return false;
+        const meta = flatLookup[fId];
+        const lvl = meta?.levelId ? String(meta.levelId) : "";
+        if (!lvl || lvl !== String(gf.floorId)) return false;
+      }
+
+      if (gf.flatCategory) {
+        const itemFlatId = item.location?.flat_id;
+        if (!itemFlatId) return false;
+        const meta = flatLookup[itemFlatId];
+        const cat = meta?.typeName || null;
+        if (!cat || String(cat) !== String(gf.flatCategory)) return false;
+      }
+
+      if (gf.roomCategory) {
+        const loc = item.location || {};
+        const cat = loc.room_category || loc.room_type || loc.room || null;
+        if (!cat || String(cat) !== String(gf.roomCategory)) return false;
+      }
+
+      if (gf.timeWindow !== "all") {
+        const latest = item.latest_submission || {};
+        const lastTimeStr = latest.checked_at || latest.supervised_at || latest.maker_at || null;
+        if (!lastTimeStr) return false;
+
+        const t = new Date(lastTimeStr);
+        if (Number.isNaN(t.getTime())) return false;
+
+        const diffDays = (now - t) / (1000 * 60 * 60 * 24);
+        if (gf.timeWindow === "30d" && diffDays > 30) return false;
+        if (gf.timeWindow === "7d" && diffDays > 7) return false;
+      }
+
+      return true;
+    });
+  }, [stats, globalFilters, flatLookup]);
+
+  const flatOptions = useMemo(() => {
+    const items = Array.isArray(itemsForFlatOptions) ? itemsForFlatOptions : [];
+    const map = new Map();
+
+    items.forEach((it) => {
+      const loc = it.location || {};
+      const flatId = loc.flat_id;
+      if (!flatId) return;
+
+      if (
+        globalFilters.buildingId &&
+        loc.building_id &&
+        String(loc.building_id) !== String(globalFilters.buildingId)
+      )
+        return;
+
+      if (globalFilters.floorId) {
+        const meta = flatLookup[flatId];
+        const lvl = meta?.levelId ? String(meta.levelId) : "";
+        if (!lvl || lvl !== String(globalFilters.floorId)) return;
+      }
+
+      if (!map.has(flatId)) {
+        const meta = flatLookup[flatId] || {};
+        const baseLabel = meta.number ? `Flat ${meta.number}` : `Flat #${flatId}`;
+        const label = meta.typeName ? `${baseLabel} • ${meta.typeName}` : baseLabel;
+        map.set(flatId, { id: String(flatId), label });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) =>
+      String(a.label).localeCompare(String(b.label))
+    );
+  }, [itemsForFlatOptions, flatLookup, globalFilters.buildingId, globalFilters.floorId]);
+
+  const rawSummary = stats?.summary || {};
+  const summary = useMemo(() => {
+    if (!workingItems || !workingItems.length) {
+      return {
+        total_items: 0,
+        total_with_submission: 0,
+        by_latest_status: {},
+        by_stage: [],
+        roles: {},
+      };
+    }
+    if (!filtersActive && rawSummary && Object.keys(rawSummary).length) return rawSummary;
+    return buildSummaryFromItems(workingItems);
+  }, [workingItems, filtersActive, rawSummary]);
+
+  const totalItems = safeNumber(summary.total_items);
+  const totalWithSubmission = safeNumber(summary.total_with_submission);
+  const byStatus = summary.by_latest_status || {};
+  const statusKeys = Object.keys(byStatus);
+
+  const completionRate = pct(byStatus.completed || 0, totalItems);
+  const withSubmissionRate = pct(totalWithSubmission, totalItems);
+
+  const roleStatsObj = summary.roles || {};
+  const allRoleKeys = Object.keys(roleStatsObj);
+  const visibleRoleKeys =
+    viewMode === "manager"
+      ? allRoleKeys
+      : allRoleKeys.filter((k) => CORE_ROLES_FOR_HEAD.includes(k));
+
+  const hasData = !!stats && !loading && !error;
+
+  /* ---------------- charts data ---------------- */
+  const statusPieData = useMemo(
+    () =>
+      statusKeys
+        .map((key) => ({
+          name: titleCaseStatus(key),
+          value: safeNumber(byStatus[key]),
+          color: statusColor(key).chartColor,
+        }))
+        .filter((d) => d.value > 0),
+    [statusKeys, byStatus]
+  );
+
+  const flatLabel = (flatId) => {
+    const meta = flatLookup?.[flatId];
+    const base = meta?.number ? `Flat ${meta.number}` : `Flat #${flatId}`;
+    return meta?.typeName ? `${base} • ${meta.typeName}` : base;
+  };
+
+
+
+const questionStatusTotal = useMemo(
+  () => (statusPieData || []).reduce((s, d) => s + safeNumber(d.value), 0),
+  [statusPieData]
+);
+
+
+
+const pieLabelWithCountAndPct = (total) => ({ name, value }) => {
+  const v = safeNumber(value);
+  const p = total ? Math.round((v / total) * 100) : 0;
+  return `${name}: ${fmtInt(v)} (${p}%)`;
+};
+
+
+
+
+  const flatProgressChartData = useMemo(() => {
+    const items = Array.isArray(workingItems) ? workingItems : [];
+    const map = new Map();
+
+    items.forEach((it) => {
+      const flatId = it?.location?.flat_id;
+      if (!flatId) return;
+
+      const st = String(it?.item_status || "").toLowerCase();
+
+      const rec =
+        map.get(flatId) || {
+          flatId: String(flatId),
+          name: flatLabel(flatId),
+          completed: 0,
+          pending_checker: 0,
+          pending_for_inspector: 0,
+          not_started: 0,
+          other: 0,
+          total: 0,
+        };
+
+      rec.total += 1;
+
+      if (st === "completed") rec.completed += 1;
+      else if (st === "pending_checker" || st === "pending_for_checker") rec.pending_checker += 1;
+      else if (st === "pending_for_inspector") rec.pending_for_inspector += 1;
+      else if (st === "not_started" || st === "created") rec.not_started += 1;
+      else rec.other += 1;
+
+      map.set(flatId, rec);
+    });
+
+    const arr = Array.from(map.values());
+    arr.forEach((r) => (r.open = r.pending_checker + r.pending_for_inspector + r.not_started));
+    arr.sort((a, b) => b.open - a.open || b.total - a.total);
+    return arr.slice(0, 12);
+  }, [workingItems, flatLookup]);
+
+  const BarValueLabel = ({ x, y, width, value, fill }) => {
+    if (!value || value <= 0) return null;
+    return (
+      <text
+        x={x + width / 2}
+        y={y - 6}
+        textAnchor="middle"
+        fontSize={11}
+        fontWeight={900}
+        fill={fill || "#0f172a"}
+        style={{ pointerEvents: "none" }}
+      >
+        {value}
+      </text>
+    );
+  };
+
+  const teamPerformanceData = useMemo(() => {
+    if (!hasData) return [];
+    const userStats = {};
+    (workingItems || []).forEach((item) => {
+      const status = (item.item_status || "").toLowerCase();
+      const rolesObj = item.roles || {};
+      ["maker", "checker", "supervisor"].forEach((rk) => {
+        const uid = rolesObj[rk]?.user_id;
+        if (!uid) return;
+        if (!userStats[uid]) {
+          userStats[uid] = {
+            userName: resolveUserName(uid),
+            completed: 0,
+            pending: 0,
+            total: 0,
+            efficiency: 0,
+          };
+        }
+        userStats[uid].total += 1;
+        if (status === "completed") userStats[uid].completed += 1;
+        else userStats[uid].pending += 1;
+      });
+    });
+
+    return Object.values(userStats)
+      .map((u) => ({ ...u, efficiency: u.total > 0 ? Math.round((u.completed / u.total) * 100) : 0 }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+  }, [workingItems, hasData, userMap]);
+
+  const workloadDistributionData = useMemo(() => {
+    if (!visibleRoleKeys.length) return [];
+    return visibleRoleKeys
+      .map((roleKey) => {
+        const rStats = roleStatsObj[roleKey] || {};
+        const roleLabel = roleKey
+          .split("_")
+          .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+          .join(" ");
+        return {
+          role: roleLabel,
+          items: safeNumber(rStats.items_touched),
+          users: safeNumber(rStats.distinct_users),
+          avgPerUser:
+            safeNumber(rStats.distinct_users) > 0
+              ? Math.round(safeNumber(rStats.items_touched) / safeNumber(rStats.distinct_users))
+              : 0,
+        };
+      })
+      .filter((d) => d.items > 0);
+  }, [visibleRoleKeys, roleStatsObj]);
+
+  const velocityChartData = useMemo(() => {
+    if (!workingItems || !workingItems.length) return [];
+    const days = 30;
+    const data = [];
+    const now = new Date();
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      let completed = 0;
+      let started = 0;
+
+      workingItems.forEach((item) => {
+        const latest = item.latest_submission || {};
+        const activityDate = latest.checked_at || latest.supervised_at || latest.maker_at;
+        if (!activityDate) return;
+        const actDate = new Date(activityDate);
+        if (actDate.toDateString() === date.toDateString()) {
+          if ((item.item_status || "").toLowerCase() === "completed") completed++;
+          else started++;
+        }
+      });
+
+      data.push({
+        date: `${date.getDate()}/${date.getMonth() + 1}`,
+        completed,
+        started,
+      });
+    }
+    return data;
+  }, [workingItems]);
+
+  // ✅ Donut chart (30d split) — counts (NOT percent)
+  const velocityTotals = useMemo(() => {
+    const out = { completed: 0, touched: 0, total: 0 };
+    (velocityChartData || []).forEach((d) => {
+      out.completed += safeNumber(d.completed);
+      out.touched += safeNumber(d.started);
+    });
+    out.total = out.completed + out.touched;
+    return out;
+  }, [velocityChartData]);
+
+  // ✅ Donut data from API (mutually exclusive buckets)
+const unitCounts = unitStageSummary?.counts || {};
+const unitTotalUnits = safeNumber(unitCounts.total_units);
+
+const unitDonutData = useMemo(() => {
+  return [
+    {
+      name: "Yet to Start",
+      value: safeNumber(unitCounts.pending_yet_to_start),
+      color: CHART_COLORS.danger,
+    },
+    {
+      name: "Snag Flats",
+      value: safeNumber(unitCounts.work_in_progress_unit),
+      color: CHART_COLORS.warning,
+    },
+    {
+      name: "Pending for snag",
+      value: safeNumber(unitCounts.yet_to_verify),
+      color: CHART_COLORS.secondary,
+    },
+    {
+      name: "Complete",
+      value: safeNumber(unitCounts.complete),
+      color: CHART_COLORS.success,
+    },
+  ].filter((x) => x.value > 0);
+}, [
+  unitCounts.pending_yet_to_start,
+  unitCounts.work_in_progress_unit,
+  unitCounts.yet_to_verify,
+  unitCounts.complete,
+]);
+const unitStatusTotal = useMemo(
+  () => (unitDonutData || []).reduce((s, d) => s + safeNumber(d.value), 0),
+  [unitDonutData]
+);
+
+  const roleRadarData = useMemo(() => {
+    if (!visibleRoleKeys.length) return [];
+    const maxItems = Math.max(0, ...visibleRoleKeys.map((k) => safeNumber(roleStatsObj[k]?.items_touched)));
+    return visibleRoleKeys
+      .map((roleKey) => {
+        const rStats = roleStatsObj[roleKey] || {};
+        const roleLabel = roleKey.split("_")[0];
+        const items = safeNumber(rStats.items_touched);
+        return {
+          role: roleLabel,
+          coverage: maxItems > 0 ? Math.round((items / maxItems) * 100) : 0,
+          users: safeNumber(rStats.distinct_users) * 10,
+        };
+      })
+      .filter((d) => d.coverage > 0);
+  }, [visibleRoleKeys, roleStatsObj]);
+
+  // ✅ WIP-only source for Pareto (from by-tower API)
+const wipItemsForPareto = useMemo(() => {
+  return towerSummary?.work_in_progress_detail?.items || [];
+}, [towerSummary]);
+const wipUnitIdSet = useMemo(() => {
+  let ids = towerSummary?.work_in_progress_detail?.wip_unit_ids;
+
+  // fallback: derive from units list if backend didn't send wip_unit_ids
+  if (!Array.isArray(ids) || !ids.length) {
+    const units = towerSummary?.work_in_progress_detail?.units || [];
+    ids = (units || [])
+      .map((u) => u?.unit_id || u?.unit_summary?.unit_id)
+      .filter(Boolean);
+  }
+
+  return new Set((ids || []).map(String));
+}, [towerSummary]);
+
+
+
+const wipFloorIdSet = useMemo(() => {
+  const s = new Set();
+  if (!wipUnitIdSet?.size) return s;
+
+  wipUnitIdSet.forEach((fid) => {
+    const meta = flatLookup?.[fid];
+    if (meta?.levelId) s.add(String(meta.levelId));
+  });
+
+  return s;
+}, [wipUnitIdSet, flatLookup]);
+
+const wipFloorOptions = useMemo(() => {
+  const opts = floorOptions || [];
+  if (!opts.length || !wipFloorIdSet.size) return [];
+  return opts.filter((f) => wipFloorIdSet.has(String(f.id)));
+}, [floorOptions, wipFloorIdSet]);
+
+
+// const wipUnitIdSet = useMemo(() => {
+//   const ids = towerSummary?.work_in_progress_detail?.wip_unit_ids || [];
+//   return new Set(ids.map(String));
+// }, [towerSummary]);
+// useEffect(() => {
+//   setParetoFilters((p) => ({
+//     ...p,
+//     focusFlatIds: (p.focusFlatIds || []).filter((fid) => wipUnitIdSet.has(String(fid))),
+//   }));
+// }, [wipUnitIdSet]);
+
+useEffect(() => {
+  setParetoFilters((p) => ({
+    ...p,
+    floorIds: (p.floorIds || []).filter((fid) => wipFloorIdSet.has(String(fid))),
+  }));
+}, [wipFloorIdSet]);
+
+
+useEffect(() => {
+  setParetoFilters((p) => ({
+    ...p,
+    focusFlatIds: (p.focusFlatIds || []).filter((fid) => wipUnitIdSet.has(String(fid))),
+  }));
+}, [wipUnitIdSet]);
+
+
+
+// ✅ Optional: limit Pareto "Focus flats" dropdown to only WIP flats
+const wipFlatOptions = useMemo(() => {
+  const ids = Array.from(wipUnitIdSet || []);
+  if (!ids.length) return [];
+
+  const numFromMeta = (id) => {
+    const n = flatLookup?.[id]?.number;
+    const parsed = Number(String(n ?? "").replace(/[^\d]/g, ""));
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
+  const opts = ids.map((id) => ({
+    id: String(id),
+    label: flatLabel(id), // uses flatLookup inside
+    _n: numFromMeta(String(id)),
+  }));
+
+  // Sort by flat number (optional)
+  opts.sort((a, b) => (a._n - b._n) || String(a.label).localeCompare(String(b.label)));
+
+  return opts.map(({ _n, ...rest }) => rest);
+}, [wipUnitIdSet, flatLookup]);
+
+// const wipFlatOptions = useMemo(() => {
+//   if (!wipUnitIdSet.size) return [];
+//   return (flatOptions || []).filter((o) => wipUnitIdSet.has(String(o.id)));
+// }, [flatOptions, wipUnitIdSet]);
+
+const paretoCategoryData = useMemo(() => {
+  const items = Array.isArray(wipItemsForPareto) ? wipItemsForPareto : [];
+  if (!items.length) return [];
+
+  const selectedStatus = String(globalFilters.status || "").toLowerCase();
+  const selectedFloorIds = paretoFilters.floorIds || [];
+  const selectedFlatIds = paretoFilters.focusFlatIds || [];
+  const categoryMode = paretoFilters.categoryMode || "checklist";
+
+  const rowsMap = {};
+
+  items.forEach((item) => {
+    const st = String(item?.item_status || "").toLowerCase();
+
+       // ✅ HARD LOCK: only items from SNAG flats (WIP unit ids)
+   if (wipUnitIdSet.size) {
+     const fId = item?.location?.flat_id;
+     if (!fId || !wipUnitIdSet.has(String(fId))) return;
+   }
+
+    // ✅ Status behavior:
+    // - If user selected a status, respect it.
+    // - Else default to "pending inside WIP" (i.e. exclude completed).
+    if (selectedStatus) {
+      if (!matchesStatusFilter(item, selectedStatus)) return;
+    } else {
+  // default: show all non-completed items inside SNAG flats
+  if (st === "completed") return;
+    }
+
+    // ✅ Floor filter (uses flatLookup like before)
+    if (selectedFloorIds.length) {
+      const flatId = item?.location?.flat_id;
+      const meta = flatId ? flatLookup?.[flatId] : null;
+      const lid = meta?.levelId ? String(meta.levelId) : null;
+      if (!lid || !selectedFloorIds.includes(lid)) return;
+    }
+
+    // ✅ Focus flats filter
+    if (selectedFlatIds.length) {
+      const fId = item?.location?.flat_id;
+      if (!fId || !selectedFlatIds.includes(String(fId))) return;
+    }
+
+    const label = getParetoCategoryLabel(item, flatLookup, categoryMode);
+    const key = String(label || "Other");
+
+    if (!rowsMap[key]) rowsMap[key] = { categoryLabel: key, pending: 0 };
+    rowsMap[key].pending += 1;
+  });
+
+  let rows = Object.values(rowsMap).filter((r) => r.pending > 0);
+  if (!rows.length) return [];
+
+  rows.sort((a, b) => b.pending - a.pending);
+
+  const total = rows.reduce((sum, r) => sum + r.pending, 0) || 1;
+  let running = 0;
+
+  return rows.map((r) => {
+    running += r.pending;
+    const cumulativePct = Math.round((running / total) * 100);
+    return { ...r, cumulativePct, isTop80: cumulativePct <= 80 };
+  });
+}, [wipItemsForPareto, wipUnitIdSet, globalFilters.status, paretoFilters, flatLookup]);
+  // const paretoCategoryData = useMemo(() => {
+  //   if (!workingItems || !workingItems.length) return [];
+
+  //   const selectedStatus = String(globalFilters.status || "").toLowerCase();
+  //   const selectedStageId = globalFilters.stageId || null;
+  //   const selectedBuildingId = globalFilters.buildingId || null;
+  //   const selectedFloorIds = paretoFilters.floorIds || [];
+  //   const selectedFlatIds = paretoFilters.focusFlatIds || [];
+  //   const categoryMode = paretoFilters.categoryMode || "checklist";
+
+  //   const rowsMap = {};
+  //   workingItems.forEach((item) => {
+  //     const status = (item.item_status || "").toLowerCase();
+
+  //     if (selectedStatus) {
+  //       if (!matchesStatusFilter(item, selectedStatus)) return;
+  //     } else {
+  //       const pendingKeys = ["pending_checker", "pending_for_inspector", "not_started"];
+  //       if (!pendingKeys.includes(status)) return;
+  //     }
+
+  //     if (selectedStageId) {
+  //       const sId = item.checklist?.stage_id;
+  //       if (!sId || String(sId) !== String(selectedStageId)) return;
+  //     }
+
+  //     if (selectedBuildingId) {
+  //       const bId = item.location?.building_id;
+  //       if (!bId || String(bId) !== String(selectedBuildingId)) return;
+  //     }
+
+  //     if (selectedFloorIds.length) {
+  //       const flatId = item.location?.flat_id;
+  //       const meta = flatId ? flatLookup[flatId] : null;
+  //       const lid = meta?.levelId ? String(meta.levelId) : null;
+  //       if (!lid || !selectedFloorIds.includes(lid)) return;
+  //     }
+
+  //     if (selectedFlatIds.length) {
+  //       const fId = item.location?.flat_id;
+  //       if (!fId || !selectedFlatIds.includes(String(fId))) return;
+  //     }
+
+  //     const label = getParetoCategoryLabel(item, flatLookup, categoryMode);
+  //     const key = label;
+
+  //     if (!rowsMap[key]) rowsMap[key] = { categoryLabel: label, pending: 0 };
+  //     rowsMap[key].pending += 1;
+  //   });
+
+  //   let rows = Object.values(rowsMap).filter((r) => r.pending > 0);
+  //   if (!rows.length) return [];
+
+  //   rows.sort((a, b) => b.pending - a.pending);
+
+  //   const totalPending = rows.reduce((sum, r) => sum + r.pending, 0) || 1;
+  //   let running = 0;
+
+  //   return rows.map((r) => {
+  //     running += r.pending;
+  //     const cumulativePct = Math.round((running / totalPending) * 100);
+  //     return { ...r, cumulativePct, isTop80: cumulativePct <= 80 };
+  //   });
+  // }, [
+  //   workingItems,
+  //   globalFilters.status,
+  //   globalFilters.stageId,
+  //   globalFilters.buildingId,
+  //   paretoFilters,
+  //   flatLookup,
+  // ]);
+
+  const paretoMinWidth = useMemo(() => {
+    const n = paretoCategoryData?.length || 0;
+    return Math.max(900, n * 90);
+  }, [paretoCategoryData]);
+  // ✅ Helpers for Tat/Aging compute
+const numOrNull = (v) => {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isNaN(n) ? null : n;
+};
+
+const paretoStatus = useMemo(
+  () => String(globalFilters.status || "").toLowerCase(),
+  [globalFilters.status]
+);
+
+const paretoBarName = useMemo(() => {
+  if (!paretoStatus) return "Pending Questions (Snags only)";
+  if (paretoStatus === "completed") return "Completed Questions (Snags only)";
+  if (paretoStatus === "started") return "Started Questions (Snags only)";
+  return `${titleCaseStatus(paretoStatus)} Questions (Snags only)`;
+}, [paretoStatus]);
+
+const paretoTopColor = useMemo(
+  () => (paretoStatus === "completed" ? CHART_COLORS.success : CHART_COLORS.danger),
+  [paretoStatus]
+);
+
+const paretoCardTitle = useMemo(() => {
+  if (!paretoStatus) return "Pareto Chart (Snags • Pending )";
+  if (paretoStatus === "completed") return "Pareto Chart (Snags • Completed )";
+  if (paretoStatus === "started") return "Pareto Chart (Snags • Started )";
+  return `Pareto Chart (Snags • ${titleCaseStatus(paretoStatus)} )`;
+}, [paretoStatus]);
+
+const tatRoleChartData = useMemo(() => {
+  const d = tatAging?.data || {};
+  const roles = [
+    { key: "maker", label: "Maker" },
+    { key: "supervisor", label: "Supervisor" },
+    { key: "checker", label: "Checker" },
+  ];
+
+  const wavg = (rows, valKey, weightKey) => {
+    let num = 0;
+    let den = 0;
+    (rows || []).forEach((r) => {
+      const v = numOrNull(r?.[valKey]);
+      const w = numOrNull(r?.[weightKey]);
+      if (v === null || w === null || w <= 0) return;
+      num += v * w;
+      den += w;
+    });
+    if (!den) return null;
+    return Math.round((num / den) * 100) / 100;
+  };
+
+  const maxVal = (rows, key) => {
+    let mx = null;
+    (rows || []).forEach((r) => {
+      const v = numOrNull(r?.[key]);
+      if (v === null) return;
+      mx = mx === null ? v : Math.max(mx, v);
+    });
+    return mx === null ? null : Math.round(mx * 100) / 100;
+  };
+
+  const sumKey = (rows, key) =>
+    (rows || []).reduce((s, r) => s + safeNumber(r?.[key] || 0), 0);
+
+  return roles.map((rr) => {
+    const rows = Array.isArray(d?.[rr.key]) ? d[rr.key] : [];
+
+    const assigned = sumKey(rows, "assigned");
+    const pending = sumKey(rows, "pending");
+    const completed = sumKey(rows, "completed");
+
+    // ✅ TAT avg -> weighted by completed
+    const avgTat = wavg(rows, "avg_tat_days", "completed");
+
+    // ✅ Aging avg -> weighted by pending
+    const avgAging = wavg(rows, "avg_aging_days", "pending");
+
+    const maxAging = maxVal(rows, "max_aging_days");
+
+    return {
+      role: rr.label,
+      assigned,
+      pending,
+      completed,
+      avg_tat_days: avgTat ?? 0,
+      avg_aging_days: avgAging ?? 0,
+      max_aging_days: maxAging ?? 0,
+      _avg_tat_raw: avgTat,     // tooltip debug
+      _avg_aging_raw: avgAging, // tooltip debug
+      _max_aging_raw: maxAging, // tooltip debug
+    };
+  });
+}, [tatAging]);
+
+const tatBucketChartData = useMemo(() => {
+  const d = tatAging?.data || {};
+  const roles = [
+    { key: "maker", label: "Maker" },
+    { key: "supervisor", label: "Supervisor" },
+    { key: "checker", label: "Checker" },
+  ];
+
+  const sumBucket = (rows, bucketKey) =>
+    (rows || []).reduce((s, r) => s + safeNumber(r?.aging_buckets?.[bucketKey] || 0), 0);
+
+  return roles.map((rr) => {
+    const rows = Array.isArray(d?.[rr.key]) ? d[rr.key] : [];
+    return {
+      role: rr.label,
+      b_0_1d: sumBucket(rows, "0_1d"),
+      b_1_3d: sumBucket(rows, "1_3d"),
+      b_3_7d: sumBucket(rows, "3_7d"),
+      b_7_15d: sumBucket(rows, "7_15d"),
+      b_15p_d: sumBucket(rows, "15p_d"),
+    };
+  });
+}, [tatAging]);
+
+// Optional: Top pending users table (debug + manager view)
+const tatTopUsers = useMemo(() => {
+  const d = tatAging?.data || {};
+  const out = [];
+  const push = (roleKey, arr) => {
+    (arr || []).forEach((r) => {
+      out.push({
+        role: roleKey.toUpperCase(),
+        user_id: r?.user_id ?? null,
+        user_name: r?.user_name || (r?.user_id ? `User #${r.user_id}` : "Unassigned"),
+        pending: safeNumber(r?.pending || 0),
+        completed: safeNumber(r?.completed || 0),
+        assigned: safeNumber(r?.assigned || 0),
+        avg_tat_days: numOrNull(r?.avg_tat_days),
+        avg_aging_days: numOrNull(r?.avg_aging_days),
+        max_aging_days: numOrNull(r?.max_aging_days),
+      });
+    });
+  };
+  push("maker", d.maker);
+  push("supervisor", d.supervisor);
+  push("checker", d.checker);
+
+  out.sort((a, b) => b.pending - a.pending || b.assigned - a.assigned);
+  return out.slice(0, 12);
+}, [tatAging]);
+
+
+  const TopValueLabel = ({ x, y, width, value, fill }) => {
+    if (!value || value <= 0) return null;
+    return (
+      <text
+        x={x + width / 2}
+        y={y - 6}
+        textAnchor="middle"
+        fontSize={11}
+        fontWeight={900}
+        fill={fill || "#0f172a"}
+        style={{ pointerEvents: "none" }}
+      >
+        {value}
+      </text>
+    );
+  };
+
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (!active || !payload || !payload.length) return null;
+    const header = label || payload?.[0]?.name || "";
+    return (
+      <div
+        className="rounded-xl p-3 shadow-xl border"
+        style={{
+          background: theme === "dark" ? "rgba(15,23,42,0.95)" : "rgba(255,255,255,0.98)",
+          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        }}
+      >
+        {header ? (
+          <div className="text-xs font-bold mb-2" style={{ color: textColor }}>
+            {header}
+          </div>
+        ) : null}
+        {payload.map((entry, idx) => (
+          <div key={idx} className="text-xs font-semibold" style={{ color: entry.color }}>
+            {entry.name}: {entry.value}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const EmptyChart = ({ title, subtitle }) => (
+    <Card theme={theme} className="p-5">
+      <div className="text-base font-black mb-1">{title}</div>
+      <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+        {subtitle || "No data for current filters."}
+      </div>
+      <div
+        className="h-[320px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+        style={{
+          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+          background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+          color: subText,
+        }}
+      >
+        No data
+      </div>
+    </Card>
+  );
+
+  /* ---------------- render ---------------- */
+  const resolveTowerName = (towerObj) => {
+  const tid = towerObj?.tower_id;
+
+  // ✅ tower_id matches building_id → use buildingNameMap (comes from by_project API)
+  const realName =
+    tid != null ? buildingNameMap?.get?.(String(tid)) : null;
+
+  return (
+    realName ||
+    towerObj?.tower_label ||
+    (tid != null ? `Tower #${tid}` : "Tower NA")
+  );
+};
+
+const towerChartData = useMemo(() => {
+  const towers = towerSummary?.towers || [];
+  if (!Array.isArray(towers) || towers.length === 0) return [];
+
+  const rows = towers.map((t) => {
+    const c = t?.counts || {};
+    const row = {
+      tower: resolveTowerName(t),
+
+      pending_yet_to_start: safeNumber(c.pending_yet_to_start),
+      work_in_progress_unit: safeNumber(c.work_in_progress_unit),
+      yet_to_verify: safeNumber(c.yet_to_verify),
+      complete: safeNumber(c.complete),
+    };
+
+    row.total =
+      row.pending_yet_to_start +
+      row.work_in_progress_unit +
+      row.yet_to_verify +
+      row.complete;
+
+    return row;
+  });
+
+  // Optional: sort by total desc
+  rows.sort((a, b) => safeNumber(b.total) - safeNumber(a.total));
+  return rows;
+}, [towerSummary, buildingNameMap]);
+
+
+const towerKeyColor = (k) => {
+  const key = String(k || "").toLowerCase();
+  if (key === "pending_yet_to_start") return CHART_COLORS.danger;
+  if (key === "work_in_progress_unit") return CHART_COLORS.warning;
+  if (key === "yet_to_verify") return CHART_COLORS.secondary;
+  if (key === "complete") return CHART_COLORS.success;
+  return CHART_COLORS.muted;
+};
+// ✅ Flats Summary (same as screenshot) — uses by-tower API totals
+// ✅ Flats Summary (same as screenshot) — uses by-tower API counts
+const flatsSummaryTotals =
+  towerSummary?.counts || towerSummary?.towers?.[0]?.counts || {};
+
+const flatsSummaryStats = useMemo(() => {
+  return {
+    total: safeNumber(flatsSummaryTotals.total_units),
+    initiated: safeNumber(flatsSummaryTotals.initialised_unit_count),
+    snag: safeNumber(flatsSummaryTotals.work_in_progress_unit),
+    desnag: safeNumber(flatsSummaryTotals.complete),
+    pendingForSnag: safeNumber(flatsSummaryTotals.yet_to_verify),
+    yetToStart: safeNumber(flatsSummaryTotals.pending_yet_to_start),
+  };
+}, [towerSummary]);
+
+const flatsSummaryChartData = useMemo(() => {
+  return [
+    { key: "total", name: "Total\nflats", value: flatsSummaryStats.total, color: FLATS_SUMMARY_COLORS.total },
+    { key: "initiated", name: "Initiated", value: flatsSummaryStats.initiated, color: FLATS_SUMMARY_COLORS.initiated },
+    { key: "pendingForSnag", name: "Pending\nfor snag", value: flatsSummaryStats.pendingForSnag, color: FLATS_SUMMARY_COLORS.pendingForSnag },
+    { key: "snag", name: "Snag\nflats", value: flatsSummaryStats.snag, color: FLATS_SUMMARY_COLORS.snag },
+    { key: "desnag", name: "Desnag", value: flatsSummaryStats.desnag, color: FLATS_SUMMARY_COLORS.desnag },
+  ];
+}, [flatsSummaryStats]);
+
+
+// const flatsSummaryChartData = useMemo(() => {
+//   return [
+//     { name: "Total\nflats", value: flatsSummaryStats.total },
+//     { name: "Initiated", value: flatsSummaryStats.initiated },
+//     { name: "Pending\nfor snag", value: flatsSummaryStats.pendingForSnag },
+//     { name: "Snag\nflats", value: flatsSummaryStats.snag },
+//     { name: "Desnag", value: flatsSummaryStats.desnag },
+//   ];
+// }, [flatsSummaryStats]);
+
+// X-axis tick that supports \n line breaks (like your image labels)
+const MultiLineTick = ({ x, y, payload }) => {
+  const lines = String(payload?.value || "").split("\n");
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text
+        x={0}
+        y={0}
+        dy={16}
+        textAnchor="middle"
+        fill={subText}
+        style={{ fontSize: "11px", fontWeight: 800 }}
+      >
+        {lines.map((l, i) => (
+          <tspan key={i} x="0" dy={i === 0 ? 0 : 12}>
+            {l}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
+};
+
+
+  return (
+    <div
+      className="min-h-screen"
+      style={{
+        background: theme === "dark" ? "#0b1220" : "#f8fafc",
+        color: textColor,
+      }}
+    >
+      <div className="mx-auto max-w-[1600px] px-4 md:px-8 py-8 space-y-6">
+        {loading && (
+          <div className="py-16 text-center font-bold" style={{ color: subText }}>
+            Loading dashboard...
+          </div>
+        )}
+
+        {!loading && error && (
+          <Card theme={theme} className="p-6 border-red-300">
+            <div className="font-black text-lg">Unable to load</div>
+            <div className="text-sm font-semibold mt-1" style={{ color: subText }}>
+              {error}
+            </div>
+          </Card>
+        )}
+
+        {hasData && (
+          <>
+            {/* Header */}
+           
+
+            {/* Global Filters (Aligned) */}
+            <Card theme={theme} className="p-5">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <div className="text-sm font-black">Global Filters</div>
+                  <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+                    These filters affect all charts/tables below.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                   setGlobalFilters({
+  buildingId: "",
+  floorId: "",
+  flatId: "",
+  stageId: "",
+  status: "",
+  flatCategory: "",
+  roomCategory: "",
+  timeWindow: "all",
+})
+
+                  }
+                  className="h-[42px] px-4 rounded-xl text-sm font-black border"
+                  style={{
+                    borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                    color: subText,
+                    background: theme === "dark" ? "rgba(2,6,23,0.4)" : "rgba(248,250,252,0.95)",
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+
+              <div className="grid gap-3 mt-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+                <div>
+                  <Label theme={theme}>Status</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.status}
+                    onChange={(e) => setGlobalFilters((p) => ({ ...p, status: e.target.value }))}
+                  >
+                    <option value="">All</option>
+                    <option value="started">Started</option>
+                    {distinctStatuses.map((s) => (
+                      <option key={s} value={s}>
+                        {titleCaseStatus(s)}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                {/* <div>
+                  <Label theme={theme}>Role touch</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.role}
+                    onChange={(e) => setGlobalFilters((p) => ({ ...p, role: e.target.value }))}
+                  >
+                    <option value="">All</option>
+                    <option value="maker">Maker</option>
+                    <option value="supervisor">Supervisor</option>
+                    <option value="checker">Checker</option>
+                  </Select>
+                </div> */}
+
+                <div>
+                  <Label theme={theme}>Stage</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.stageId}
+                    onChange={(e) => setGlobalFilters((p) => ({ ...p, stageId: e.target.value }))}
+                  >
+                    <option value="">All</option>
+                    {Object.entries(stageMap).map(([sid, label]) => (
+                      <option key={sid} value={sid}>
+                        {label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div>
+                  <Label theme={theme}>Building</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.buildingId}
+                    onChange={(e) =>
+                      setGlobalFilters((p) => ({
+                        ...p,
+                        buildingId: e.target.value,
+                        floorId: "",
+                        flatId: "",
+                      }))
+                    }
+                  >
+                    <option value="">All</option>
+                    {buildingOptions.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div>
+                  <Label theme={theme}>Floor</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.floorId}
+                    onChange={(e) =>
+                      setGlobalFilters((p) => ({
+                        ...p,
+                        floorId: e.target.value,
+                        flatId: "",
+                      }))
+                    }
+                  >
+                    <option value="">All</option>
+                    {floorOptions.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div>
+                  <Label theme={theme}>Flat</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.flatId}
+                    onChange={(e) => setGlobalFilters((p) => ({ ...p, flatId: e.target.value }))}
+                  >
+                    <option value="">All</option>
+                    {flatOptions.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.label}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div>
+                  <Label theme={theme}>Flat Category</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.flatCategory}
+                    onChange={(e) => setGlobalFilters((p) => ({ ...p, flatCategory: e.target.value }))}
+                  >
+                    <option value="">All</option>
+                    {flatCategoryOptions.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div>
+                  <Label theme={theme}>Room Category</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.roomCategory}
+                    onChange={(e) => setGlobalFilters((p) => ({ ...p, roomCategory: e.target.value }))}
+                  >
+                    <option value="">All</option>
+                    {roomCategoryOptions.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div className="xl:col-span-2">
+                  <Label theme={theme}>Time Window</Label>
+                  <Select
+                    theme={theme}
+                    className="h-[42px]"
+                    value={globalFilters.timeWindow}
+                    onChange={(e) => setGlobalFilters((p) => ({ ...p, timeWindow: e.target.value }))}
+                  >
+                    <option value="all">All time</option>
+                    <option value="30d">Last 30 days</option>
+                    <option value="7d">Last 7 days</option>
+                  </Select>
+                </div>
+              </div>
+            </Card>
+            {/* ✅ Flats Summary (like screenshot) */}
+            <Card theme={theme} className="p-5" ref={flatsSummaryRef}>
+  <div className="flex items-start justify-between gap-3 mb-2">
+    <div>
+      <div className="text-base font-black">
+        {flatsDrill.view !== "summary" ? flatsDrill.bucketLabel : "Flats Summary"}
+      </div>
+
+      <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+        {globalFilters.buildingId
+          ? `Building: ${
+              buildingNameMap.get(String(globalFilters.buildingId)) ||
+              `Building #${globalFilters.buildingId}`
+            }`
+          : "All Buildings"}
+      </div>
+
+      {flatsDrill.view !== "summary" && (
+        <div className="text-[11px] font-semibold mt-1" style={{ color: subText }}>
+          Click “Back” to return summary
+        </div>
+      )}
+    </div>
+
+    <div className="flex items-center gap-2">
+      {flatsDrill.view !== "summary" && (
+  <button
+    type="button"
+onClick={
+  flatsDrill.view === "questions"
+    ? backFromQuestionsToRooms
+    : flatsDrill.view === "rooms"
+      ? backFromRoomsToUnits
+      : resetFlatsDrill
+}
+    className="h-[40px] px-3 rounded-xl text-xs font-black border"
+    style={{
+      borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+      background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+      color: textColor,
+    }}
+  >
+    Back
+  </button>
+)}
+
+
+      {/* ✅ ONLY Export PDF button (as you said) */}
+      {/* <button
+        type="button"
+        onClick={handleFlatsSummaryExportPDF}
+        className="h-[40px] px-4 rounded-xl text-xs font-black border flex items-center gap-2"
+        style={{
+          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+          background: theme === "dark" ? "rgba(2,6,23,0.45)" : "rgba(248,250,252,0.95)",
+          color: textColor,
+        }}
+      >
+        <Download size={16} />
+        Export PDF
+      </button> */}
+    </div>
+  </div>
+
+  {/* ✅ Chart area (same place, drilldown inside this) */}
+  {flatsDrill.view === "summary" ? (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart
+        data={flatsSummaryChartData}
+        margin={{ top: 20, right: 20, left: 10, bottom: 40 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+        <XAxis dataKey="name" stroke={subText} interval={0} height={60} tick={<MultiLineTick />} />
+        <YAxis stroke={subText} allowDecimals={false} />
+        <Tooltip content={<CustomTooltip />} />
+
+        {/* ✅ click enabled */}
+        <Bar
+          dataKey="value"
+          name="Flats"
+          label={<TopValueLabel />}
+onClick={(e) => onFlatsSummaryBarClick(e?.payload || e)}
+        >
+          {(flatsSummaryChartData || []).map((entry, idx) => (
+            <Cell key={`cell-${idx}`} fill={entry.color} cursor="pointer" />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  ) : flatsDrill.loading ? (
+    <div
+      className="h-[320px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      Loading detail...
+    </div>
+    ) : flatsDrill.view === "questions" ? (
+  <div
+    className="h-[320px] rounded-2xl border overflow-auto"
+    style={{
+      borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+      background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+      color: textColor,
+    }}
+  >
+    <div className="p-4 border-b" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+      <div className="text-sm font-black">
+        Pending Questions • {flatsDrill.selectedUnitLabel} • {flatsDrill.selectedRoomLabel}
+      </div>
+      <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+        Total pending: {fmtInt(flatsDrill.pendingQuestions?.length || 0)}
+      </div>
+    </div>
+
+    {(flatsDrill.pendingQuestions || []).length === 0 ? (
+      <div className="p-6 text-sm font-semibold" style={{ color: subText }}>
+        No pending questions in this room ✅
+      </div>
+    ) : (
+      <table className="min-w-full text-xs">
+        <thead style={{ background: theme === "dark" ? "rgba(2,6,23,0.55)" : "#f1f5f9" }}>
+          <tr>
+            <th className="text-left px-4 py-2 font-black">Question</th>
+            <th className="text-left px-4 py-2 font-black">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {flatsDrill.pendingQuestions.map((q, idx) => (
+            <tr key={idx} className="border-t" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+              <td className="px-4 py-2 font-semibold">{q.title}</td>
+              <td className="px-4 py-2">
+                <span
+                  className="inline-flex items-center px-2 py-1 rounded-full text-[11px] font-black border"
+                  style={{
+                    borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                    color: statusColor(q.status).text,
+                    background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+                  }}
+                >
+                  {titleCaseStatus(q.status)}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+
+
+    
+  ) : flatsDrill.error ? (
+    <div
+      className="h-[320px] rounded-2xl border flex flex-col items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >{flatsDrill.view === "rooms" ? (
+  <button onClick={backFromRoomsToUnits}>Back</button>
+) : flatsDrill.view === "units" ? (
+  <button onClick={resetFlatsDrill}>Back</button>
+) : null}
+
+      <div>{flatsDrill.error}</div>
+    </div>
+  ) : (
+    <ResponsiveContainer width="100%" height={320}>
+  <BarChart
+    data={flatsDrill.view === "rooms" ? flatsDrill.rooms : flatsDrill.units}
+    margin={{ top: 20, right: 20, left: 10, bottom: 60 }}
+  >
+    <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+    <XAxis
+      dataKey={flatsDrill.view === "rooms" ? "room" : "unit_label"}
+      stroke={subText}
+      interval={0}
+      angle={-25}
+      textAnchor="end"
+      height={70}
+      tickFormatter={(v) => (String(v).length > 16 ? `${String(v).slice(0, 16)}…` : v)}
+    />
+    <YAxis stroke={subText} allowDecimals={false} />
+    <Tooltip content={<CustomTooltip />} />
+    <Legend />
+
+    <Bar dataKey="not_started" stackId="a" name="Not Started" fill={CHART_COLORS.muted}
+onClick={(e) => {
+  const payload = e?.payload || e;
+  if (flatsDrill.view === "units") onFlatUnitBarClick(payload);
+  if (flatsDrill.view === "rooms") onRoomBarClick(payload);
+}}
+    />
+    <Bar dataKey="maker_pending" stackId="a" name="Maker Pending" fill={CHART_COLORS.warning}
+onClick={(e) => {
+  const payload = e?.payload || e;
+  if (flatsDrill.view === "units") onFlatUnitBarClick(payload);
+  if (flatsDrill.view === "rooms") onRoomBarClick(payload);
+}}
+    />
+    <Bar dataKey="checker_pending" stackId="a" name="Checker Pending" fill={CHART_COLORS.secondary}
+onClick={(e) => {
+  const payload = e?.payload || e;
+  if (flatsDrill.view === "units") onFlatUnitBarClick(payload);
+  if (flatsDrill.view === "rooms") onRoomBarClick(payload);
+}}
+    />
+    <Bar dataKey="other" stackId="a" name="Other" fill={CHART_COLORS.muted} />
+    <Bar dataKey="completed" stackId="a" name="Completed" fill={CHART_COLORS.success}>
+      <LabelList dataKey="total_items" position="top" />
+    </Bar>
+  </BarChart>
+</ResponsiveContainer>
+
+  )}
+</Card>
+
+
+
+
+             {/* ✅ Pareto Block (checkbox multiselect) */}
+            {paretoCategoryData.length > 0 && (
+             <Card theme={theme} className="p-5">
+  <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+    <div>
+      <div className="text-base font-black">{paretoCardTitle}</div>
+      
+    </div>
+
+    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 w-full lg:w-auto">
+      <div className="min-w-[220px]">
+        <Label theme={theme}>Category</Label>
+        <Select
+          theme={theme}
+          className="h-[42px]"
+          value={paretoFilters.categoryMode}
+          onChange={(e) =>
+            setParetoFilters((p) => ({ ...p, categoryMode: e.target.value }))
+          }
+        >
+          {PARETO_CATEGORY_MODES.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </Select>
+      </div>
+
+      {globalFilters.buildingId && wipFloorOptions.length > 0 && (
+        <MultiSelectDropdown
+          theme={theme}
+          label="Snag floors"
+          options={wipFloorOptions}
+          value={paretoFilters.floorIds}
+          onChange={(arr) => setParetoFilters((p) => ({ ...p, floorIds: arr }))}
+          placeholder="All SNAG floors"
+          className="min-w-[240px]"
+        />
+      )}
+
+      {wipFlatOptions.length > 0 && (
+        <MultiSelectDropdown
+          theme={theme}
+          label="Snag flats"
+          options={wipFlatOptions}
+          value={paretoFilters.focusFlatIds}
+          onChange={(arr) =>
+            setParetoFilters((p) => ({ ...p, focusFlatIds: arr }))
+          }
+          placeholder="All SNAG flats"
+          className="min-w-[260px]"
+        />
+      )}
+    </div>
+  </div>
+
+  {towerLoading ? (
+    <div
+      className="h-[460px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      Loading pareto...
+    </div>
+  ) : paretoCategoryData.length === 0 ? (
+    <div
+      className="h-[460px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      No pareto data for current filters.
+    </div>
+  ) : (
+    <div className="overflow-x-auto">
+      <div style={{ minWidth: paretoMinWidth }}>
+        <ResponsiveContainer width="100%" height={460}>
+          <ComposedChart
+            data={paretoCategoryData}
+            margin={{ top: 20, right: 30, left: 10, bottom: 90 }}
+          >
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
+            />
+            <XAxis
+              dataKey="categoryLabel"
+              stroke={subText}
+              angle={-30}
+              textAnchor="end"
+              height={95}
+              interval={0}
+              style={{ fontSize: "11px" }}
+              tickFormatter={(v) =>
+                String(v).length > 28 ? `${String(v).slice(0, 28)}…` : v
+              }
+            />
+            <YAxis yAxisId="left" stroke={subText} width={55} />
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              stroke={subText}
+              domain={[0, 100]}
+              tickFormatter={(v) => `${v}%`}
+              width={50}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend />
+
+            <Bar
+              yAxisId="left"
+              dataKey="pending"
+              name={paretoBarName}
+              label={<TopValueLabel />}
+            >
+              {paretoCategoryData.map((entry, idx) => (
+                <Cell
+                  key={idx}
+                  fill={entry.isTop80 ? paretoTopColor : CHART_COLORS.muted}
+                />
+              ))}
+            </Bar>
+
+            <Line
+              yAxisId="right"
+              type="monotone"
+              dataKey="cumulativePct"
+              name="Cumulative %"
+              stroke={CHART_COLORS.secondary}
+              strokeWidth={2}
+              dot={false}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  )}
+</Card>
+
+            )}
+
+            {/* ✅ 30-Day Velocity FULL WIDTH (complete space) */}
+            {velocityChartData.length > 0 ? (
+              <Card theme={theme} className="p-5">
+                <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
+                  <div>
+                    <div className="text-base font-black">30-Day Activity Velocity</div>
+                    {/* <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+                      Completed: {fmtInt(velocityTotals.completed)} • Touched: {fmtInt(velocityTotals.touched)} • Total:{" "}
+                      {fmtInt(velocityTotals.total)}
+                    </div> */}
+                  </div>
+                </div>
+
+                <ResponsiveContainer width="100%" height={360}>
+                  <AreaChart data={velocityChartData}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
+                    />
+                    <XAxis dataKey="date" stroke={subText} style={{ fontSize: "10px" }} />
+                    <YAxis stroke={subText} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend />
+                    <Area
+                      type="monotone"
+                      dataKey="completed"
+                      stroke={CHART_COLORS.success}
+                      fill={CHART_COLORS.success}
+                      fillOpacity={0.25}
+                      name="Completed"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="started"
+                      stroke={CHART_COLORS.secondary}
+                      fill={CHART_COLORS.secondary}
+                      fillOpacity={0.20}
+                      name="Touched"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </Card>
+            ) : (
+              <Card theme={theme} className="p-5">
+                <div className="text-base font-black mb-1">30-Day Activity Velocity</div>
+                <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+                  No activity in last 30 days for current filters.
+                </div>
+                <div
+                  className="h-[360px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+                  style={{
+                    borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                    background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+                    color: subText,
+                  }}
+                >
+                  No data
+                </div>
+              </Card>
+            )}
+
+            {/* ✅ 6-grid ONLY: bar, pie, donut, top team performance, role wise workload, role coverage analysis */}
+            <div className="grid gap-4 lg:grid-cols-2">
+              {/* 1) Bar */}
+              {/* 1) Tower-wise Progress (Horizontal Stacked like image) */}
+{/* {towerLoading ? (
+  <Card theme={theme} className="p-5">
+    <div className="text-base font-black mb-1">Tower-wise Progress</div>
+    <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+      Loading...
+    </div>
+    <div
+      className="h-[320px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      Loading tower chart...
+    </div>
+  </Card>
+) : towerChartData.length > 0 ? (
+  <Card theme={theme} className="p-5">
+    <div className="text-base font-black mb-3">Tower-wise Progress</div>
+
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={towerChartData} layout="vertical" barSize={16}>
+        <CartesianGrid
+          strokeDasharray="3 3"
+          stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
+        />
+
+        <XAxis type="number" stroke={subText} />
+
+        <YAxis
+          type="category"
+          dataKey="tower"
+          stroke={subText}
+          width={90}
+          style={{ fontSize: "11px", fontWeight: 800 }}
+        />
+
+        <Tooltip content={<CustomTooltip />} />
+        <Legend />
+
+        <Bar
+          dataKey="pending_yet_to_start"
+          name="Pending (Yet to Start)"
+          stackId="a"
+          fill={towerKeyColor("pending_yet_to_start")}
+        />
+        <Bar
+          dataKey="work_in_progress_unit"
+          name="Snag Flats"
+          stackId="a"
+          fill={towerKeyColor("work_in_progress_unit")}
+        />
+        <Bar
+          dataKey="yet_to_verify"
+          name="Pending for Snag"
+          stackId="a"
+          fill={towerKeyColor("yet_to_verify")}
+        />
+        <Bar
+          dataKey="complete"
+          name="Complete"
+          stackId="a"
+          fill={towerKeyColor("complete")}
+        />
+      </BarChart>
+    </ResponsiveContainer>
+  </Card>
+) : (
+  <EmptyChart
+    title="Tower-wise Progress"
+    subtitle={towerError || "No tower data for current filters."}
+  />
+)} */}
+
+
+     {/* 3) Donut (counts, not percent) */}
+             {/* 3) Donut (from API: unit-stage-role-summary) */}
+{unitStageLoading ? (
+  <Card theme={theme} className="p-5">
+    <div className="text-base font-black mb-1">Unit Status Split (Donut)</div>
+    <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+      Loading...
+    </div>
+    <div
+      className="h-[320px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      Loading donut data...
+    </div>
+  </Card>
+) : unitDonutData.length > 0 ? (
+ <Card theme={theme} className="p-5">
+  <div className="flex items-start justify-between gap-3 mb-1">
+    <div className="text-base font-black">Unit Status Split</div>
+
+    <div className="min-w-[160px]">
+      <Select
+        theme={theme}
+        className="h-[38px]"
+        value={unitStatusView}
+        onChange={(e) => setUnitStatusView(e.target.value)}
+      >
+        {UNIT_STATUS_VIEWS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </Select>
+    </div>
+  </div>
+
+  <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+    Total Units: {fmtInt(unitTotalUnits)}
+    {" • "}
+    Yet to Start: {fmtInt(unitCounts.pending_yet_to_start)}
+    {" • "}
+    WIP: {fmtInt(unitCounts.work_in_progress_unit)}
+    {" • "}
+    Yet to Verify: {fmtInt(unitCounts.yet_to_verify)}
+    {" • "}
+    Complete: {fmtInt(unitCounts.complete)}
+  </div>
+
+  {/* ---- SAME DATA, DIFFERENT VIEW ---- */}
+  {unitStatusView === "bar" ? (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={unitDonutData} margin={{ top: 20, right: 20, left: 10, bottom: 60 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+        <XAxis
+          dataKey="name"
+          stroke={subText}
+          interval={0}
+          angle={-25}
+          textAnchor="end"
+          height={70}
+          tickFormatter={(v) => (String(v).length > 16 ? `${String(v).slice(0, 16)}…` : v)}
+        />
+        <YAxis stroke={subText} allowDecimals={false} />
+        <Tooltip content={<CustomTooltip />} />
+        <Bar dataKey="value" name="Units" label={<TopValueLabel />}>
+          {(unitDonutData || []).map((entry, idx) => (
+            <Cell key={idx} fill={entry.color} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  ) : (
+    <ResponsiveContainer width="100%" height={320}>
+      <PieChart>
+        <Pie
+          data={unitDonutData}
+          dataKey="value"
+          cx="50%"
+          cy="50%"
+          innerRadius={unitStatusView === "donut" ? 60 : 0}
+          outerRadius={95}
+          paddingAngle={2}
+          labelLine={false}
+          label={pieLabelWithCountAndPct(unitStatusTotal)}
+        >
+          {unitDonutData.map((entry, idx) => (
+            <Cell key={idx} fill={entry.color} />
+          ))}
+        </Pie>
+
+        <Tooltip content={<CustomTooltip />} />
+        <Legend />
+
+        {/* Center total ONLY for donut */}
+        {unitStatusView === "donut" && (
+          <>
+            <text
+              x="50%"
+              y="50%"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="22"
+              fontWeight="900"
+              fill={textColor}
+            >
+              {fmtInt(unitTotalUnits)}
+            </text>
+            <text
+              x="50%"
+              y="50%"
+              dy={22}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="11"
+              fontWeight="800"
+              fill={subText}
+            >
+              Total Units
+            </text>
+          </>
+        )}
+      </PieChart>
+    </ResponsiveContainer>
+  )}
+</Card>
+
+) : (
+  <EmptyChart
+    title="Unit Status Split (Donut)"
+    subtitle={unitStageError || "No unit summary data for current filters."}
+  />
+)}
+
+
+
+              {/* 2) Pie */}
+              {statusPieData.length > 0 ? (
+               <Card theme={theme} className="p-5">
+  <div className="flex items-start justify-between gap-3 mb-3">
+    <div className="text-base font-black">Status Distribution (Questions)</div>
+
+    <div className="min-w-[160px]">
+      <Select
+        theme={theme}
+        className="h-[38px]"
+        value={questionStatusView}
+        onChange={(e) => setQuestionStatusView(e.target.value)}
+      >
+        {QUESTION_STATUS_VIEWS.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </Select>
+    </div>
+  </div>
+
+  {questionStatusView === "bar" ? (
+    <ResponsiveContainer width="100%" height={320}>
+      <BarChart data={statusPieData} margin={{ top: 20, right: 20, left: 10, bottom: 60 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+        <XAxis
+          dataKey="name"
+          stroke={subText}
+          interval={0}
+          angle={-25}
+          textAnchor="end"
+          height={70}
+          tickFormatter={(v) => (String(v).length > 18 ? `${String(v).slice(0, 18)}…` : v)}
+        />
+        <YAxis stroke={subText} allowDecimals={false} />
+        <Tooltip content={<CustomTooltip />} />
+        <Bar dataKey="value" name="Questions" label={<TopValueLabel />}>
+          {(statusPieData || []).map((entry, idx) => (
+            <Cell key={idx} fill={entry.color} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  ) : (
+    <ResponsiveContainer width="100%" height={320}>
+      <PieChart>
+        <Pie
+          data={statusPieData}
+          cx="50%"
+          cy="50%"
+          outerRadius={100}
+          innerRadius={questionStatusView === "donut" ? 60 : 0}
+          dataKey="value"
+          labelLine={false}
+          label={pieLabelWithCountAndPct(questionStatusTotal)}
+        >
+          {statusPieData.map((entry, idx) => (
+            <Cell key={idx} fill={entry.color} />
+          ))}
+        </Pie>
+        <Tooltip content={<CustomTooltip />} />
+        <Legend />
+      </PieChart>
+    </ResponsiveContainer>
+  )}
+</Card>
+
+              ) : (
+                <EmptyChart title="Status Distribution" />
+              )}
+
+         
+
+              {/* 4) Top Team Performance */}
+              {/* {teamPerformanceData.length > 0 ? (
+                <Card theme={theme} className="p-5">
+                  <div className="text-base font-black mb-3">Top Team Performance</div>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={teamPerformanceData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+                      <XAxis dataKey="userName" stroke={subText} angle={-40} textAnchor="end" height={90} style={{ fontSize: "10px" }} />
+                      <YAxis stroke={subText} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend />
+                      <Bar dataKey="completed" fill={CHART_COLORS.success} name="Completed" />
+                      <Bar dataKey="pending" fill={CHART_COLORS.warning} name="Pending" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Card>
+              ) : (
+                <EmptyChart title="Top Team Performance" />
+              )} */}
+
+              {/* 5) Role-wise Workload */}
+              {/* {workloadDistributionData.length > 0 ? (
+                <Card theme={theme} className="p-5">
+                  <div className="text-base font-black mb-3">Role-wise Workload</div>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <BarChart data={workloadDistributionData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+                      <XAxis dataKey="role" stroke={subText} angle={-35} textAnchor="end" height={80} style={{ fontSize: "11px" }} />
+                      <YAxis stroke={subText} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend />
+                      <Bar dataKey="items" fill={CHART_COLORS.primary} name="Total Items" />
+                      <Bar dataKey="avgPerUser" fill={CHART_COLORS.secondary} name="Avg per User" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Card>
+              ) : (
+                <EmptyChart title="Role-wise Workload" />
+              )} */}
+
+              {/* 6) Role Coverage Analysis */}
+              {/* {roleRadarData.length > 0 ? (
+                <Card theme={theme} className="p-5">
+                  <div className="text-base font-black mb-3">Role Coverage Analysis</div>
+                  <ResponsiveContainer width="100%" height={320}>
+                    <RadarChart data={roleRadarData}>
+                      <PolarGrid stroke={theme === "dark" ? "#334155" : "#e2e8f0"} />
+                      <PolarAngleAxis dataKey="role" stroke={subText} style={{ fontSize: "12px" }} />
+                      <PolarRadiusAxis stroke={subText} />
+                      <Radar
+                        name="Coverage"
+                        dataKey="coverage"
+                        stroke={CHART_COLORS.primary}
+                        fill={CHART_COLORS.primary}
+                        fillOpacity={0.25}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Legend />
+                    </RadarChart>
+                  </ResponsiveContainer>
+                </Card>
+              ) : (
+                <EmptyChart title="Role Coverage Analysis" />
+              )} */}
+            </div>
+
+           
+            {/* ✅ TAT & Aging (AFTER Pareto) */}
+{tatAgingLoading ? (
+  <Card theme={theme} className="p-5">
+    <div className="text-base font-black mb-1">TAT & Aging (Role-wise)</div>
+    <div className="text-xs font-semibold mb-3" style={{ color: subText }}>
+      Loading...
+    </div>
+    <div
+      className="h-[360px] rounded-2xl border flex items-center justify-center text-sm font-semibold"
+      style={{
+        borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+        background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+        color: subText,
+      }}
+    >
+      Loading TAT/Aging chart...
+    </div>
+  </Card>
+) : tatRoleChartData?.length > 0 ? (
+  <Card theme={theme} className="p-5">
+    <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
+      <div>
+        <div className="text-base font-black">TAT & Aging (Role-wise)</div>
+        <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+          Avg TAT = completed items time • Avg Aging = pending items time • Max Aging = worst pending
+        </div>
+      </div>
+      {tatAgingError ? (
+        <div className="text-xs font-extrabold" style={{ color: CHART_COLORS.danger }}>
+          {tatAgingError}
+        </div>
+      ) : null}
+    </div>
+
+    <div className="grid gap-4 lg:grid-cols-2">
+      {/* Chart 1: Avg TAT vs Avg Aging + Max Aging */}
+      <div
+        className="rounded-2xl border p-3"
+        style={{
+          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+          background: theme === "dark" ? "rgba(2,6,23,0.28)" : "rgba(248,250,252,0.95)",
+        }}
+      >
+        <div className="text-sm font-black mb-2">Avg TAT vs Avg Aging (Days)</div>
+        <ResponsiveContainer width="100%" height={320}>
+          <ComposedChart data={tatRoleChartData}>
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
+            />
+            <XAxis dataKey="role" stroke={subText} />
+            <YAxis stroke={subText} />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend />
+            <Bar
+              dataKey="avg_tat_days"
+              name="Avg TAT (days)"
+              fill={CHART_COLORS.primary}
+            />
+            <Bar
+              dataKey="avg_aging_days"
+              name="Avg Aging (days)"
+              fill={CHART_COLORS.warning}
+            />
+            <Line
+              type="monotone"
+              dataKey="max_aging_days"
+              name="Max Aging (days)"
+              stroke={CHART_COLORS.danger}
+              strokeWidth={2}
+              dot={false}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+
+        <div className="mt-2 grid grid-cols-3 gap-2 text-xs font-semibold" style={{ color: subText }}>
+          {tatRoleChartData.map((r) => (
+            <div key={r.role} className="rounded-xl border px-3 py-2"
+              style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+              <div className="font-black" style={{ color: textColor }}>{r.role}</div>
+              <div>Assigned: {fmtInt(r.assigned)}</div>
+              <div>Pending: {fmtInt(r.pending)}</div>
+              <div>Completed: {fmtInt(r.completed)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Chart 2: Aging buckets by role */}
+      <div
+        className="rounded-2xl border p-3"
+        style={{
+          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+          background: theme === "dark" ? "rgba(2,6,23,0.28)" : "rgba(248,250,252,0.95)",
+        }}
+      >
+        <div className="text-sm font-black mb-2">Pending Aging Buckets (Counts)</div>
+
+        <ResponsiveContainer width="100%" height={320}>
+          <BarChart data={tatBucketChartData}>
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke={theme === "dark" ? "#334155" : "#e2e8f0"}
+            />
+            <XAxis dataKey="role" stroke={subText} />
+            <YAxis stroke={subText} />
+            <Tooltip content={<CustomTooltip />} />
+            <Legend />
+            <Bar dataKey="b_0_1d" name="0-1d" stackId="a" fill={CHART_COLORS.success} />
+            <Bar dataKey="b_1_3d" name="1-3d" stackId="a" fill={CHART_COLORS.secondary} />
+            <Bar dataKey="b_3_7d" name="3-7d" stackId="a" fill={CHART_COLORS.warning} />
+            <Bar dataKey="b_7_15d" name="7-15d" stackId="a" fill={CHART_COLORS.danger} />
+            <Bar dataKey="b_15p_d" name="15+d" stackId="a" fill={CHART_COLORS.muted} />
+          </BarChart>
+        </ResponsiveContainer>
+
+        {/* Optional: Top users table */}
+        {tatTopUsers?.length > 0 && (
+          <div className="mt-3 overflow-auto">
+            <div className="text-sm font-black mb-2">Top Pending Users</div>
+            <table className="min-w-full text-xs">
+              <thead style={{ background: theme === "dark" ? "rgba(2,6,23,0.55)" : "#f1f5f9" }}>
+                <tr>
+                  <th className="text-left px-3 py-2 font-black">Role</th>
+                  <th className="text-left px-3 py-2 font-black">User</th>
+                  <th className="text-right px-3 py-2 font-black">Pending</th>
+                  <th className="text-right px-3 py-2 font-black">Avg Aging</th>
+                  <th className="text-right px-3 py-2 font-black">Max Aging</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tatTopUsers.map((r, idx) => (
+                  <tr key={idx} className="border-t" style={{ borderColor: theme === "dark" ? "#334155" : "#e2e8f0" }}>
+                    <td className="px-3 py-2 font-extrabold">{r.role}</td>
+                    <td className="px-3 py-2 font-semibold" style={{ color: subText }}>
+                      {r.user_name}
+                    </td>
+                    <td className="px-3 py-2 text-right font-black">{fmtInt(r.pending)}</td>
+                    <td className="px-3 py-2 text-right font-black">
+                      {r.avg_aging_days == null ? "-" : r.avg_aging_days.toFixed(2)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-black">
+                      {r.max_aging_days == null ? "-" : r.max_aging_days.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  </Card>
+) : (
+  <EmptyChart
+    title="TAT & Aging (Role-wise)"
+    subtitle={tatAgingError || "No TAT/Aging data for current filters."}
+  />
+)}
+
+
+            {/* Detailed Item View */}
+            <Card theme={theme} className="overflow-hidden">
+              <div className="p-5 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <div className="text-base font-black">Detailed Item View</div>
+                  <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+                    Scroll table for full list.
+                  </div>
+                </div>
+              </div>
+
+              <div className="max-h-[520px] overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="sticky top-0 z-10" style={{ background: theme === "dark" ? "#0f172a" : "#f1f5f9" }}>
+                    <tr>
+                      <th className="text-left px-5 py-3 font-black">Item</th>
+                      <th className="text-left px-5 py-3 font-black">Status</th>
+                      <th className="text-left px-5 py-3 font-black">Location</th>
+                      <th className="text-left px-5 py-3 font-black">Team</th>
+                      <th className="text-left px-5 py-3 font-black">Activity</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {(workingItems || []).length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-5 py-10 text-center font-bold" style={{ color: subText }}>
+                          No items for current filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      (workingItems || []).map((item) => {
+                        const col = statusColor(item.item_status);
+                        const latest = item.latest_submission || {};
+                        const lastTime = latest.checked_at || latest.supervised_at || latest.maker_at || null;
+
+                        const stageId = item.checklist?.stage_id;
+                        const stageLabel =
+                          (stageId && stageMap[stageId]) || (stageId ? `Stage #${stageId}` : "-");
+
+                        return (
+                          <tr key={item.item_id} className="border-t" style={{ borderColor: theme === "dark" ? "#1f2937" : "#e2e8f0" }}>
+                            <td className="px-5 py-3 align-top">
+                              <div className="font-black">{item.item_title}</div>
+                              <div className="text-xs font-semibold mt-1" style={{ color: subText }}>
+                                Checklist {item.checklist?.id} • {stageLabel}
+                              </div>
+                            </td>
+
+                            <td className="px-5 py-3 align-top">
+                              <span
+                                className="inline-flex items-center px-3 py-1 rounded-full text-xs font-black border"
+                                style={{
+                                  borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
+                                  color: col.text,
+                                  background: theme === "dark" ? "rgba(2,6,23,0.35)" : "rgba(248,250,252,0.95)",
+                                }}
+                              >
+                                {titleCaseStatus(item.item_status)}
+                              </span>
+                            </td>
+
+                            <td className="px-5 py-3 align-top">
+                              <div className="text-xs font-semibold" style={{ color: subText }}>
+                                {buildLocationLabel(item.location, flatLookup)}
+                              </div>
+                              {(() => {
+                                const loc = item.location || {};
+                                const roomCat = loc.room_category || loc.room_type || loc.room || null;
+                                return roomCat ? (
+                                  <div className="text-[11px] mt-1" style={{ color: subText }}>
+                                    Room: {roomCat}
+                                  </div>
+                                ) : null;
+                              })()}
+                            </td>
+
+                            <td className="px-5 py-3 align-top">
+                              <div className="flex flex-col gap-1 text-xs font-semibold">
+                                {["maker", "supervisor", "checker"].map((rKey) => {
+                                  const rBlock = item.roles && item.roles[rKey];
+                                  if (!rBlock || !rBlock.user_id) return null;
+                                  const name = resolveUserName(rBlock.user_id);
+                                  return (
+                                    <div key={rKey} style={{ color: subText }}>
+                                      <span className="uppercase font-black">
+                                        {rKey.charAt(0).toUpperCase() + rKey.slice(1)}:
+                                      </span>{" "}
+                                      <span style={{ color: textColor }}>{name}</span>
+                                    </div>
+                                  );
+                                })}
+                                {!item.roles && <span style={{ color: subText }}>No team assigned</span>}
+                              </div>
+                            </td>
+
+                            <td className="px-5 py-3 align-top">
+                              <div className="text-xs font-semibold" style={{ color: subText }}>
+                                {formatDateTime(lastTime)}
+                              </div>
+                              {latest.attempts ? (
+                                <div className="text-xs font-black mt-1">Attempts: {latest.attempts}</div>
+                              ) : null}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default ProjectOverview;
