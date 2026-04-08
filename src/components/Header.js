@@ -190,15 +190,15 @@
 //             </h2>
 //           </span>
 //         </div>
-        
+
 
 //         {/* Right actions */}
 //         <ul
 //           className="hidden md:flex justify-end items-center gap-5 py-2 uppercase text-sm"
 //           style={{ marginLeft: "auto" }}
 //         >
-           
-        
+
+
 //           {/* 🔹 NEW: MIR create link (sab roles ke liye) */}
 //           <NavLink
 //             to="/mir/create"
@@ -342,25 +342,38 @@ function Header() {
     userRoles = JSON.parse(localStorage.getItem("ACCESSES") || "[]")
       .flatMap((acc) => (Array.isArray(acc.roles) ? acc.roles : []))
       .map((r) => (typeof r === "string" ? r : r?.role));
-  } catch {}
+  } catch { }
   const allRoles = [
     ...(rolee ? [rolee] : []),
     ...(userRoles.length ? userRoles : []),
   ];
   const ALLOWED_ROLES = ["admin", "super admin", "manager"];
   const norm = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "");
+  const normalize = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "");
+
   const hasRole = (name) => allRoles.some((r) => norm(r) === norm(name));
-  const showHamburger = allRoles.some((r) =>
-    ALLOWED_ROLES.some((a) => norm(r) === norm(a))
-  );
+
+  const hasAnyOrgAdminRole = () => {
+    const normRoles = allRoles.map(normalize);
+    return ALLOWED_ROLES.some((allowed) => normRoles.includes(normalize(allowed)));
+  };
+  // const showHamburger = allRoles.some((r) =>
+  //   ALLOWED_ROLES.some((a) => norm(r) === norm(a))
+  // );
+
+  const showHamburger = hasAnyOrgAdminRole();
+
   const allowuser = showHamburger; // same condition as before
   const isSecurityGuard = hasRole("security guard"); // also matches "security_guard"
+
+  /** DMS/Documents: show in header when sidebar is hidden (e.g. Maker) so users can open DMS without sidebar. */
+  const showDmsInHeader = !showHamburger && !isSecurityGuard;
   const isProjectManagerOrHead =
     hasRole("Project Manager") ||
     hasRole("Project Head") ||
     hasRole("Head");
   const isSuperAdmin = hasRole("super admin");
-    const isManager = hasRole("manager");
+  const isManager = hasRole("manager");
   const isAdmin = hasRole("admin");
   // const isSuperAdmin = hasRole("super admin"); // (ye already hai)
 
@@ -485,7 +498,7 @@ function Header() {
             style={{ color: textColor, textDecoration: "none" }}
             title="Material Inspection Request"
           >
-             MIR
+            MIR
           </NavLink>
 
           {/* 🔹 MIR Inbox */}
@@ -495,8 +508,19 @@ function Header() {
             style={{ color: textColor, textDecoration: "none" }}
             title="My MIR Inbox"
           >
-             MIR Inbox
+            MIR Inbox
           </NavLink>
+
+          {/* {showDmsInHeader && (
+            <NavLink
+              to="/documents"
+              className="font-medium flex items-center gap-1"
+              style={{ color: textColor, textDecoration: "none" }}
+              title="Document management (folders, transmittals, resources)"
+            >
+              DMS
+            </NavLink>
+          )} */}
 
           {/* 🔹 Analytics (hidden for security guard + PM/Head) */}
           {!isSecurityGuard && !isProjectManagerOrHead && (
@@ -504,13 +528,13 @@ function Header() {
               to="/analytics"
               onClick={() => {
                 const pid = resolveActiveProjectId();
-                if (pid) getSnagStats(pid).catch(() => {});
+                if (pid) getSnagStats(pid).catch(() => { });
               }}
               className="font-medium flex items-center gap-1"
               style={{ color: textColor, textDecoration: "none" }}
               title="Analytics Dashboard"
             >
-               Analytics
+              Analytics
             </NavLink>
           )}
 
@@ -526,7 +550,7 @@ function Header() {
                   : "Project Forms"
               }
             >
-               Forms
+              Forms
             </NavLink>
           )}
 
@@ -538,7 +562,7 @@ function Header() {
               style={{ color: textColor, textDecoration: "none" }}
               title="My Forms Inbox"
             >
-               Forms Inbox
+              Forms Inbox
             </NavLink>
           )}
           {/* 🔹 Safety (ONLY USERS) */}

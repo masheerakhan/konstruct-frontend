@@ -18,6 +18,7 @@ const STEPS = [
 ];
 
 function SafetyWizard() {
+    console.log("SafetyWizard render hit");
     const navigate = useNavigate();
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
@@ -40,17 +41,30 @@ function SafetyWizard() {
     const [reportTitle, setReportTitle] = useState("");
 
     useEffect(() => {
+        console.log("sdfghfgdf")
         const load = async () => {
             setProjectsLoading(true);
             try {
                 const res = await getProjectsForCurrentUser();
-                const raw = res?.data ?? res;
-                const list = Array.isArray(raw) ? raw : (raw?.results ?? []);
+                console.log("projects api raw response:", res);
+                // const raw = res?.data?.projects ?? res;
+                // const list = Array.isArray(raw) ? raw : (raw?.results?.projects ?? []);
+                const payload = res?.data ?? res ?? {};
+                console.log("projects payload:", payload);
+                const list = Array.isArray(payload)
+                  ? payload
+                  : Array.isArray(payload.projects)
+                    ? payload.projects
+                    : Array.isArray(payload?.results?.projects)
+                      ? payload.results.projects
+                      : [];
+                      console.log("projects list:", list);
                 const mapped = list.map((p) => ({
                     id: p.id,
                     name: p.name || p.project_name || p.project_title || `Project #${p.id}`,
                     org_id: p.organization_id ?? p.org_id ?? p.org,
                 }));
+                console.log("mapped projects:", mapped);
                 setProjects(mapped);
                 if (mapped.length && !selectedProjectId) setSelectedProjectId(String(mapped[0].id));
             } catch (e) {

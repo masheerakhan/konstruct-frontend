@@ -84,12 +84,19 @@ function QuestionPreviewCard({ question, index }) {
                 {/* Photo Required - read-only display */}
                 <div className="mt-2 flex items-center gap-2 border-t border-gray-100 pt-3">
                     <span className="text-sm text-gray-500">Photo Required</span>
+                    {/*
+                      Support both `photo_required` (new) and `required` (legacy) to keep older saved flows working.
+                    */}
                     <div
-                        className={`relative inline-flex h-5 w-9 items-center rounded-full ${question.required ? "bg-orange-500" : "bg-gray-300"
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full ${((question.photo_required ?? question.required) ? true : false)
+                            ? "bg-orange-500"
+                            : "bg-gray-300"
                             }`}
                     >
                         <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow ${question.required ? "translate-x-4" : "translate-x-1"
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow ${((question.photo_required ?? question.required) ? true : false)
+                                ? "translate-x-4"
+                                : "translate-x-1"
                                 }`}
                         />
                     </div>
@@ -111,7 +118,8 @@ function FinalPreview({ initialQuestions = [], onBack, onSave }) {
             type: q.type || "multiple_choice",
             description: q.description || "",
             options: q.options || DEFAULT_MC_OPTIONS,
-            required: !!q.required,
+            photo_required: !!(q.photo_required ?? q.required),
+            required: !!(q.photo_required ?? q.required), // legacy fallback
         }))
     );
 

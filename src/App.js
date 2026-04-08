@@ -211,9 +211,8 @@ import CreateSafetyInspection from "./components/Safety/Safety_Inspection/Create
 import CheckerView from "./components/Safety/Safety_Inspection/Safety_inspection_checker/CheckerView";
 import DocumentPro from "./components/Safety/Document_pro/DocumentPro";
 import ViewReport from "./components/Safety/Safety_Inspection/ViewReport";
-
-
-
+import ChecklistManager from "./containers/setup/checklists/ChecklistManager";
+import UserChecklistDashboard from "./components/Safety/Safety_Inspection/UserChecklistDashboard"
 
 
 // For body background
@@ -229,9 +228,44 @@ function BodyBgController() {
   return null;
 }
 // ----------------- ROLE GUARD for Project Overview -----------------
+// function ProjectOverviewGuard({ children }) {
+//   // ROLE read from localStorage / USER_DATA
+//   let role = localStorage.getItem("ROLE") || "";
+
+//   if (!role) {
+//     try {
+//       const raw = localStorage.getItem("USER_DATA");
+//       if (raw) {
+//         const data = JSON.parse(raw);
+//         role = data?.role || data?.roles?.[0] || "";
+//       }
+//     } catch (e) {
+//       // ignore parse error
+//     }
+//   }
+
+//   const r = (role || "").toLowerCase();
+
+//   // ✅ Allowed: Project Manager / Project Head only
+//   const isAllowed = [
+//     "project manager",
+//     "project_manager",
+//     "project head",
+//     "project_head",
+//   ].some((k) => r.includes(k));
+
+//   if (!isAllowed) {
+//     // ❌ allowed nahi → config page pe bhej do
+//     return <Navigate to="/config" replace />;
+//   }
+
+//   return children;
+// }
 function ProjectOverviewGuard({ children }) {
-  // ROLE read from localStorage / USER_DATA
-  let role = localStorage.getItem("ROLE") || "";
+  let role =
+    localStorage.getItem("FLOW_ROLE") ||
+    localStorage.getItem("ROLE") ||
+    "";
 
   if (!role) {
     try {
@@ -247,7 +281,6 @@ function ProjectOverviewGuard({ children }) {
 
   const r = (role || "").toLowerCase();
 
-  // ✅ Allowed: Project Manager / Project Head only
   const isAllowed = [
     "project manager",
     "project_manager",
@@ -256,13 +289,11 @@ function ProjectOverviewGuard({ children }) {
   ].some((k) => r.includes(k));
 
   if (!isAllowed) {
-    // ❌ allowed nahi → config page pe bhej do
     return <Navigate to="/config" replace />;
   }
 
   return children;
 }
-
 
 // Your main app routes
 function AppRoutes() {
@@ -304,7 +335,8 @@ function AppRoutes() {
 
         <Route path="/project/:id" element={<ProjectDetails />} />
         <Route path="/snagging/:id" element={<Snagging />} />
-        <Route path="/Level/:id" element={<FlatMatrixTable />} />
+        {/* <Route path="/Level/:id" element={<FlatMatrixTable />} /> */}
+          <Route path="/project/:projectId/tower/:towerId" element={<FlatMatrixTable />} />
         <Route path="/checklistfloor/:id" element={<ChecklistFloor />} />
         <Route path="/checklistpage/:id" element={<ChecklistPage />} />
         <Route path="/casetup" element={<CASetup />} />
@@ -338,7 +370,8 @@ function AppRoutes() {
         <Route path="/safetySetup/create" element={<SafetyWizard />} />
 
 
-        <Route path="/safety/inspection-checker" element={<CheckerView />} />
+        {/* <Route path="/safety/inspection-checker" element={<CheckerView />} /> */}
+        <Route path="/safety/inspection-checker" element={<UserChecklistDashboard />} />
         <Route path="/safety/inspection-report/:id" element={<ViewReport />} />
 
 
@@ -397,7 +430,8 @@ function AppRoutes() {
 
         <Route path="/chif-setup" element={<ChifSetup />} />
         <Route path="/Chifstep1" element={<Chifstep1 />} />
-        <Route path="/Checklist" element={<Checklist />} />
+        {/* <Route path="/Checklist" element={<Checklist />} /> */}
+        <Route path="/Checklist" element={<ChecklistManager />} />
         <Route path="/setup" element={<Setup />} />
         <Route path="/user-setup" element={<UserSetup />} />
         <Route path="/user" element={<User />} />
@@ -410,8 +444,12 @@ function AppRoutes() {
           path="/hierarchical-verifications"
           element={<HierarchicalVerifications />}
         />
-        <Route
+        {/* <Route
           path="/inspection/flat/:flatId"
+          element={<FlatInspectionPage />}
+        /> */}
+        <Route
+          path="/project/:projectId/tower/:towerId/floor/:levelId/flat-inspection/:flatId"
           element={<FlatInspectionPage />}
         />
         {/* Add more as needed */}

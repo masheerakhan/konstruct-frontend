@@ -21,36 +21,25 @@ const SafetyInspectionList = () => {
     const [error, setError] = useState(null);
 
     // Load projects
-   useEffect(() => {
-     let alive = true;
-     (async () => {
-       try {
-         setLoadingProjects(true);
-         const res = await getProjectsForCurrentUser();
-         const raw = res?.data;
-
-         const list = Array.isArray(raw)
-           ? raw
-           : Array.isArray(raw?.projects)
-             ? raw.projects
-             : Array.isArray(raw?.results)
-               ? raw.results
-               : [];
-
-         if (alive) setProjects(Array.isArray(list) ? list : []);
-
-         const active = resolveActiveProjectId?.();
-         if (alive && active) setProjectId(String(active));
-       } catch (e) {
-         if (alive) setProjects([]);
-       } finally {
-         if (alive) setLoadingProjects(false);
-       }
-     })();
-     return () => {
-       alive = false;
-     };
-   }, []);
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            try {
+                setLoadingProjects(true);
+                const res = await getProjectsForCurrentUser();
+                const raw = res?.data;
+                const list = Array.isArray(raw) ? raw : raw?.results ?? [];
+                if (alive) setProjects(list);
+                const active = resolveActiveProjectId?.();
+                if (alive && active) setProjectId(String(active));
+            } catch (e) {
+                if (alive) setProjects([]);
+            } finally {
+                if (alive) setLoadingProjects(false);
+            }
+        })();
+        return () => { alive = false; };
+    }, []);
 
     const fetchChecklists = async () => {
         setLoading(true);

@@ -954,6 +954,7 @@ export const getCategoryTreeByProject = async (projectId) =>
     },
   });
 
+// Create user with role at one go
 export const createUserAccessRole = async (payload) =>
   axiosInstance.post(`/user-access-role/`, payload, {
     headers: {
@@ -961,6 +962,36 @@ export const createUserAccessRole = async (payload) =>
     },
   });
 
+// For existing user access creation
+export const createUserAccess = async (payload) =>
+    axiosInstance.post("/accesses/", payload, {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+// For existing user role access creation
+export const createRoleForUserAccess = async (payload) =>
+    axiosInstance.post("/roles/", payload, {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+export const getProjectAccesses = async (userId, projectId) => {
+  const token =
+    localStorage.getItem("ACCESS_TOKEN") ||
+    localStorage.getItem("TOKEN") ||
+    localStorage.getItem("token");
+
+  return axiosInstance.get(
+    `/accesses/?user_id=${userId}&project_id=${projectId}`,
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+       "Content-Type": "application/json",
+    }
+  );
+};
 
 export const getPhaseByPurposeId = async (purposeId) =>
   projectInstance.get(`phases/by-purpose/${purposeId}/`, {
@@ -1405,17 +1436,27 @@ export const getQuestionHotspots = (projectId, params = {}) =>
     params: { project_id: projectId, ...params },
   });
 
+export const fetchNestedProjectData = async (projectId) => {
+  try {
+    console.log("🏗️ Fetching nested project data for projectId:", projectId);
 
+    const response = await projectInstance.get(
+      `projects/${projectId}/nested/`,
+      {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("ACCESS_TOKEN")}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
-
-
-
-
-
-
-
-
-
+    console.log("🏗️ Nested API Response:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("❌ Error fetching nested project data:", error);
+    throw error;
+  }
+};
 
 export function setActiveProjectId(projectId) {
   if (!projectId) return;
@@ -2777,3 +2818,19 @@ export const startFormFromBasket = (basketId, payload) =>
     urlList: __formsUrlCandidates(`/baskets/${basketId}/start-form/`),
     data: payload,
   });
+
+export const startSafetyChecklist = (id) =>
+  NEWchecklistInstance.post(`/safety/checklists/${id}/initialize/`, {}, {
+   headers: { "Content-Type": "application/json" },
+  });
+
+  export const resolveOrgId = () => {
+  try {
+   const raw = localStorage.getItem("USER_DATA");
+   if (!raw || raw === "undefined") return null;
+   const data = JSON.parse(raw);
+   return data?.org ?? data?.organization_id ?? data?.org_id ?? null;
+  } catch {
+   return null;
+  }
+};

@@ -12,7 +12,7 @@ export const QUESTION_TYPE_LABELS = {
     signature: "Signature",
 };
 
-export const DEFAULT_MC_OPTIONS = ["Yes", "No"];
+export const DEFAULT_MC_OPTIONS = ["Yes", "No", "N/A"];
 
 /**
  * Question card for creating/editing questions
@@ -21,6 +21,7 @@ function QuestionCard({ question, index, onUpdate, onDuplicate, onDelete }) {
     const updateField = (key, value) => {
         onUpdate({ ...question, [key]: value });
     };
+    const isPhotoRequired = !!(question.photo_required ?? question.required);
 
     const addOption = () => {
         const next = [...(question.options || []), `Option ${(question.options || []).length + 1}`];
@@ -199,12 +200,16 @@ function QuestionCard({ question, index, onUpdate, onDuplicate, onDelete }) {
                         <span className="text-sm text-gray-500">Photo Required</span>
                         <button
                             type="button"
-                            onClick={() => updateField("required", !question.required)}
-                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${question.required ? "bg-orange-500" : "bg-gray-300"
+                            onClick={() => {
+                                const nextVal = !isPhotoRequired;
+                                // Keep both keys for backward compatibility with older payloads.
+                                onUpdate({ ...question, photo_required: nextVal, required: nextVal });
+                            }}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${isPhotoRequired ? "bg-orange-500" : "bg-gray-300"
                                 }`}
                         >
                             <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${question.required ? "translate-x-4" : "translate-x-1"
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${isPhotoRequired ? "translate-x-4" : "translate-x-1"
                                     }`}
                             />
                         </button>

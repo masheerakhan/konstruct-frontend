@@ -47,8 +47,9 @@ function UploadAndMapping({
                 text,
                 type: "multiple_choice",
                 description: "",
-                options: ["Yes", "No"],
+                options: DEFAULT_MC_OPTIONS,
                 required: false,
+                photo_required: false,
             }));
         setExcelQuestions(questions);
     };
@@ -63,6 +64,7 @@ function UploadAndMapping({
                 description: "",
                 options: DEFAULT_MC_OPTIONS,
                 required: false,
+                photo_required: false,
             },
         ]);
     };

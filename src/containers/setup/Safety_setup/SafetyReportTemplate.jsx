@@ -46,7 +46,7 @@ function getChecklistRowsFromExcel(excelData) {
   }
   return bodyRows.map((row) => {
     const point = (Array.isArray(row) ? row[questionCol] : null) != null ? String(row[questionCol]).trim() : "";
-    return { point: point || "", before: "", after: "" };
+    return { point: point || "", before: "", after: "", remark: "" };
   }).filter((r) => r.point.length > 0);
 }
 
@@ -58,6 +58,7 @@ function getChecklistRowsFromQuestions(selectedQuestions) {
     point: typeof q.text === "string" ? q.text.trim() : "",
     before: "",
     after: "",
+    remark: "",
   })).filter((r) => r.point.length > 0);
 }
 
@@ -83,6 +84,8 @@ function SafetyReportTemplate({
   projectId,
   selectedCategoryId,
   onTemplateCreated,
+  initialTemplateData = null,
+  previewOnly = false,
 }) {
   const [createLoading, setCreateLoading] = useState(false);
 
@@ -134,6 +137,42 @@ function SafetyReportTemplate({
   }, [reportTitleProp]);
 
   useEffect(() => {
+    if (!initialTemplateData || !previewOnly) return;
+    const hdr = initialTemplateData.report_header_meta || {};
+    setMeta((prev) => ({
+      ...prev,
+      formatNo: hdr.format_no || "",
+      issuedDate: hdr.issued_date || "",
+      project: hdr.project || "",
+      revisionNo: hdr.revision_no || "",
+      revisionDate: hdr.revision_date || "",
+      inspectionReportNo: hdr.inspection_report_no || "",
+      dateOfInspection: hdr.date_of_inspection || "",
+      nameOfContractor: hdr.name_of_contractor || "",
+      makeModel: hdr.make_model || "",
+      location: hdr.location || "",
+      identificationNo: hdr.identification_no || "",
+      nameOfOperator: hdr.name_of_operator || "",
+    }));
+    setTitle(initialTemplateData.title || initialTemplateData.name || "");
+    setLogoDataUrl(
+      initialTemplateData.report_logo_url
+      || initialTemplateData.report_logo
+      || initialTemplateData.logo_url
+      || null
+    );
+    const qs = Array.isArray(initialTemplateData.questions) ? initialTemplateData.questions : [];
+    setChecklistRows(
+      qs.map((q) => ({
+        point: (q.text || "").trim(),
+        before: "",
+        after: "",
+        remark: "",
+      }))
+    );
+  }, [initialTemplateData, previewOnly]);
+
+  useEffect(() => {
     setChecklistRows((prev) => {
       if (prev.length === 0 && initialChecklistRows.length > 0) return initialChecklistRows;
       return prev;
@@ -158,14 +197,14 @@ function SafetyReportTemplate({
   const setChecklistRow = (index, field, value) => {
     setChecklistRows((prev) => {
       const next = [...prev];
-      if (!next[index]) next[index] = { point: "", before: "", after: "" };
+      if (!next[index]) next[index] = { point: "", before: "", after: "", remark: "" };
       next[index][field] = value;
       return next;
     });
   };
 
   const addChecklistRow = () => {
-    setChecklistRows((prev) => [...prev, { point: "", before: "", after: "" }]);
+    setChecklistRows((prev) => [...prev, { point: "", before: "", after: "", remark: "" }]);
   };
 
   const handleCreateTemplate = async () => {
@@ -179,15 +218,18 @@ function SafetyReportTemplate({
       .replace(/\s+/g, "_")
       .replace(/[^A-Z0-9_]/g, "") || "TEMPLATE";
 
-    const questions = (selectedQuestions || []).map((q, idx) => ({
+    const questions = (selectedQuestions || []).map((q, idx) => {
+      const photoRequired = !!(q.photo_required ?? q.required);
+      return {
       order_index: idx + 1,
       text: typeof q.text === "string" ? q.text.trim() : "",
       description: q.description || "",
       type: q.type || "multiple_choice",
       options: Array.isArray(q.options) ? q.options : ["Yes", "No"],
       required: !!q.required,
-      photo_required: !!q.photo_required,
-    }));
+      photo_required: photoRequired,
+      };
+    });
 
     setCreateLoading(true);
     try {
@@ -212,7 +254,8 @@ function SafetyReportTemplate({
           identification_no: meta.identificationNo || "",
           name_of_operator: meta.nameOfOperator || "",
         },
-        report_layout: {},
+        // Backend uses this to decide which columns to render in the final PDF.
+        report_layout: { show_remark: true },
         questions,
       };
       if (logoDataUrl && logoDataUrl.startsWith("data:")) {
@@ -243,41 +286,48 @@ function SafetyReportTemplate({
   };
 
   const displayTitle = title || reportTitleProp;
-  const displayRows = checklistRows.length > 0 ? checklistRows : [{ point: "", before: "", after: "" }];
+  const displayRows =
+    checklistRows.length > 0
+      ? checklistRows
+      : [{ point: "", before: "", after: "", remark: "" }];
   const emptyChar = "—";
 
   return (
-    <div className="min-h-screen bg-[#f5f5f7] flex items-center justify-center p-4">
+    <div className={`${previewOnly ? "bg-transparent p-0" : "min-h-screen bg-[#f5f5f7] flex items-center justify-center p-4"}`}>
       <div className="w-full max-w-[1100px] bg-white rounded-lg shadow-lg border border-gray-200 p-8">
         {/* Edit button - top right */}
         <div className="flex justify-end -mt-2 -mr-2 mb-2">
-          {!isEditMode ? (
+          {!previewOnly && (
+            !isEditMode ? (
+              <button
+                type="button"
+                onClick={() => setIsEditMode(true)}
+                className="inline-flex items-center gap-2 rounded-lg border border-orange-200 bg-white px-3 py-1.5 text-sm font-medium text-orange-600 shadow-sm hover:bg-orange-50"
+              >
+                <Pencil className="h-4 w-4" />
+                Edit
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsEditMode(false)}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+              >
+                <X className="h-4 w-4" />
+                Done
+              </button>
+            )
+          )}
+          {!previewOnly && (
             <button
               type="button"
-              onClick={() => setIsEditMode(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-orange-200 bg-white px-3 py-1.5 text-sm font-medium text-orange-600 shadow-sm hover:bg-orange-50"
+              onClick={handleCreateTemplate}
+              disabled={createLoading || !orgId || !projectId || !selectedCategoryId}
+              className="ml-3 inline-flex items-center gap-2 rounded-lg border border-orange-500 bg-orange-500 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Pencil className="h-4 w-4" />
-              Edit
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsEditMode(false)}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-            >
-              <X className="h-4 w-4" />
-              Done
+              {createLoading ? "Creating..." : "Create template"}
             </button>
           )}
-          <button
-            type="button"
-            onClick={handleCreateTemplate}
-            disabled={createLoading || !orgId || !projectId || !selectedCategoryId}
-            className="ml-3 inline-flex items-center gap-2 rounded-lg border border-orange-500 bg-orange-500 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {createLoading ? "Creating..." : "Create template"}
-          </button>
         </div>
 
 
@@ -438,9 +488,10 @@ function SafetyReportTemplate({
         <table className="w-full text-sm border-collapse mb-6">
           <thead>
             <tr className="bg-foreground/5">
-              <th className="border border-gray-200 px-3 py-2 text-left font-semibold  w-1/2">Checklist Points</th>
-              <th className="border border-gray-200 px-3 py-2 text-center font-semibold w-1/4">Before</th>
-              <th className="border border-gray-200 px-3 py-2 text-center font-semibold w-1/4">After</th>
+              <th className="border border-gray-200 px-3 py-2 text-left font-semibold w-1/2">Checklist Points</th>
+              <th className="border border-gray-200 px-3 py-2 text-center font-semibold w-1/6">Before</th>
+              <th className="border border-gray-200 px-3 py-2 text-center font-semibold w-1/6">After</th>
+              <th className="border border-gray-200 px-3 py-2 text-center font-semibold w-1/6">Remark</th>
             </tr>
           </thead>
           <tbody>
@@ -480,6 +531,19 @@ function SafetyReportTemplate({
                     />
                   ) : (
                     row.after || emptyChar
+                  )}
+                </td>
+
+                <td className="border border-gray-200 px-3 py-2 text-center text-gray-900">
+                  {isEditMode ? (
+                    <input
+                      value={row.remark}
+                      onChange={(e) => setChecklistRow(ri, "remark", e.target.value)}
+                      className="w-full border border-gray-200 px-2 py-1 text-center text-sm outline-none focus:border-orange-500"
+                      placeholder="—"
+                    />
+                  ) : (
+                    row.remark || emptyChar
                   )}
                 </td>
               </tr>

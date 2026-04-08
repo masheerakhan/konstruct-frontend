@@ -65,7 +65,7 @@ export default function SafetyMySessionsList() {
       try {
         setLoadingProjects(true);
         const res = await API.getProjectsForCurrentUser?.();
-        const raw = res?.data;
+        const raw = res?.data?.projects;
         const list =
           normalizeList(raw).items.length > 0 ? normalizeList(raw).items : safeArr(raw);
 

@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
-import { Shield, Search, SlidersHorizontal, Plus, Eye, Trash2 } from "lucide-react";
+import { Shield, Search, SlidersHorizontal, Plus, Eye, Trash2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "../../../utils/toast";
 import {
     listSafetyTemplates,
     deleteSafetyTemplate,
     getProjectsForCurrentUser,
+    getSafetyTemplate,
 } from "../../../api";
+import SafetyReportTemplate from "./SafetyReportTemplate";
 
 // Column config: add or remove columns here; table stays consistent
 const COLUMNS = [
@@ -85,6 +87,9 @@ function SafetyFormats() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [deletingId, setDeletingId] = useState(null);
+    const [viewingTemplate, setViewingTemplate] = useState(null);
+    const [viewOpen, setViewOpen] = useState(false);
+    const [viewLoading, setViewLoading] = useState(false);
 
     const projectMap = useMemo(() => {
         const m = new Map();
@@ -179,7 +184,20 @@ function SafetyFormats() {
     const handleView = (e, template) => {
         e?.stopPropagation?.();
         const id = template.id ?? template.pk;
-        if (id != null) navigate(`/safetySetup/${id}`);
+        if (id == null) return;
+        setViewOpen(true);
+        setViewLoading(true);
+        getSafetyTemplate(id)
+            .then((res) => {
+                const data = res?.data ?? res;
+                setViewingTemplate(data);
+            })
+            .catch((err) => {
+                const msg = err?.response?.data?.detail || err?.message || "Failed to load template.";
+                showToast(msg, "error");
+                setViewOpen(false);
+            })
+            .finally(() => setViewLoading(false));
     };
 
     const handleDelete = async (e, template) => {
@@ -324,6 +342,39 @@ function SafetyFormats() {
                     </div>
                 </div>
             </div>
+            {viewOpen && (
+                <div className="fixed inset-0 z-[70] bg-black/45">
+                    <div className="h-full w-full overflow-auto pt-16 pb-4 px-3 md:px-6 lg:pl-72">
+                        <div className="mx-auto w-full max-w-6xl rounded-2xl bg-white shadow-2xl border border-gray-200">
+                            <div className="sticky top-0 z-10 flex justify-end border-b border-gray-100 bg-white/95 p-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setViewOpen(false);
+                                        setViewingTemplate(null);
+                                    }}
+                                    className="rounded-full bg-gray-100 p-2 text-gray-700 hover:bg-gray-200"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+                            <div className="p-3 md:p-5">
+                                {viewLoading ? (
+                                    <div className="rounded-xl bg-white p-8 text-center text-muted-foreground">Loading template preview...</div>
+                                ) : viewingTemplate ? (
+                                    <SafetyReportTemplate
+                                        initialTemplateData={viewingTemplate}
+                                        previewOnly
+                                        selectedQuestions={[]}
+                                    />
+                                ) : (
+                                    <div className="rounded-xl bg-white p-8 text-center text-muted-foreground">No template data available.</div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

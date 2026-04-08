@@ -1074,7 +1074,8 @@ const handleManagerFinalSubmit = async () => {
 
         // Normalise initializer spelling to backend's choice
         if (v.toLowerCase() === "initializer" || v.toLowerCase() === "intializer") {
-          v = "Intializer"; // 👈 EXACT value backend uses
+          // v = "Intializer"; // 👈 EXACT value backend uses
+          v = "INTIALIZER"; // 👈 EXACT value backend uses
         }
 
         // SUPERVISOR, CHECKER, MAKER, SECURITY_GUARD already match backend choices

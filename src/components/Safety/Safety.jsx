@@ -52,7 +52,7 @@ const safetyCards = [
         path: "/safety/fire",
     },
     {
-        title: "Document Pro",
+        title: "Document Management",
         desc: "Document management",
         icon: Folder,
         color: "yellow",

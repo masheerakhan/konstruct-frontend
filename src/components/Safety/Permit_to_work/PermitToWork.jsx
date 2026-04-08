@@ -11,6 +11,7 @@ import {
 import { toast } from "react-hot-toast";
 import { parseQuestionsFromExcel } from "./utils/parsePermitExcel";
 import { useNavigate } from "react-router-dom";
+import SignatureCanvas from "react-signature-canvas";
 
 // Permit types and their visible fields (from docs/fields.txt)
 const PERMIT_TYPES = [
@@ -50,6 +51,12 @@ const DEFAULT_QUESTION_OPTIONS = [
     { value: "N/A", submission: "NA" },
 ];
 
+const SIGNATURE_FIELDS = [
+    { key: "preparedBy", label: "Prepared By Signature" },
+    { key: "checkedBy", label: "Checked By Signature" },
+    { key: "authorizedBy", label: "Authorized By Signature" },
+];
+
 function PermitToWork() {
     const navigate = useNavigate();
     // FORM STATE
@@ -85,6 +92,14 @@ function PermitToWork() {
     const [questionCount, setQuestionCount] = useState(1);
     const [bulkUploadLoading, setBulkUploadLoading] = useState(false);
     const bulkUploadInputRef = useRef(null);
+    const sigCanvasRef = useRef(null);
+    const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
+    const [activeSignatureKey, setActiveSignatureKey] = useState(null);
+    const [permitSignatures, setPermitSignatures] = useState({
+        preparedBy: { image: "", date: "" },
+        checkedBy: { image: "", date: "" },
+        authorizedBy: { image: "", date: "" },
+    });
 
     const showField = (fieldName) => {
         if (!form.type) return false;
@@ -305,6 +320,7 @@ function PermitToWork() {
             checklistName,
             // raw permit form data
             permitForm: { ...form },
+            permitSignatures,
             // questions in the exact shape ChecklistForm already uses
             questions: questions.map((q) => ({
                 question: q.question?.trim() || "",
@@ -325,6 +341,36 @@ function PermitToWork() {
                 payload,
             },
         });
+    };
+
+    const openSignatureModal = (signatureKey) => {
+        setActiveSignatureKey(signatureKey);
+        setIsSignatureModalOpen(true);
+        setTimeout(() => {
+            sigCanvasRef.current?.clear();
+        }, 0);
+    };
+
+    const closeSignatureModal = () => {
+        setIsSignatureModalOpen(false);
+        setActiveSignatureKey(null);
+        sigCanvasRef.current?.clear();
+    };
+
+    const handleSaveSignature = () => {
+        if (!activeSignatureKey) return;
+        if (!sigCanvasRef.current || sigCanvasRef.current.isEmpty()) {
+            toast.error("Please provide your signature.");
+            return;
+        }
+        const image = sigCanvasRef.current.toDataURL("image/png");
+        const date = new Date().toISOString().split("T")[0];
+        setPermitSignatures((prev) => ({
+            ...prev,
+            [activeSignatureKey]: { image, date },
+        }));
+        closeSignatureModal();
+        toast.success("Signature captured.");
     };
 
 
@@ -694,7 +740,7 @@ function PermitToWork() {
                                 className="w-full border rounded-lg p-2 mb-3"
                             />
 
-                            <div className="flex items-center gap-2 mb-2">
+                            {/* <div className="flex items-center gap-2 mb-2">
                                 <input
                                     type="checkbox"
                                     checked={!!q.photo_required}
@@ -705,7 +751,7 @@ function PermitToWork() {
                                 <span className="text-sm text-gray-700">
                                     Photo required
                                 </span>
-                            </div>
+                            </div> */}
 
                             <div className="space-y-2">
                                 {q.options.map((opt, optIdx) => (
@@ -771,6 +817,83 @@ function PermitToWork() {
                         placeholder="Remarks"
                     />
                 </div>
+
+                <div className="mt-6">
+                    <h3 className="text-base font-semibold mb-3">Signatures</h3>
+                    <div className="grid md:grid-cols-3 gap-4">
+                        {SIGNATURE_FIELDS.map((field) => {
+                            const signed = permitSignatures[field.key];
+                            return (
+                                <div key={field.key} className="border rounded-xl p-3 bg-white">
+                                    <p className="text-sm font-medium mb-2">{field.label}</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => openSignatureModal(field.key)}
+                                        className="w-full h-32 border border-dashed rounded-lg bg-gray-50 flex items-center justify-center overflow-hidden"
+                                    >
+                                        {signed.image ? (
+                                            <img
+                                                src={signed.image}
+                                                alt={field.label}
+                                                className="max-h-full max-w-full object-contain"
+                                            />
+                                        ) : (
+                                            <span className="text-sm text-gray-500">Tap to sign</span>
+                                        )}
+                                    </button>
+                                    <input
+                                        type="date"
+                                        readOnly
+                                        value={signed.date || ""}
+                                        className="w-full mt-2 border rounded-lg p-2 bg-gray-50 text-sm"
+                                    />
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {isSignatureModalOpen && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+                        <div className="w-full max-w-xl rounded-2xl bg-white p-5 shadow-2xl">
+                            <div className="mb-4 flex items-center justify-between">
+                                <h3 className="text-lg font-semibold">Capture Signature</h3>
+                                <button
+                                    type="button"
+                                    onClick={closeSignatureModal}
+                                    className="rounded-full px-2 py-1 text-lg font-bold text-gray-500 hover:bg-gray-100"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            <div className="rounded-lg border bg-white p-2">
+                                <SignatureCanvas
+                                    ref={sigCanvasRef}
+                                    penColor="#111827"
+                                    canvasProps={{
+                                        className: "h-44 w-full rounded-md border",
+                                    }}
+                                />
+                            </div>
+                            <div className="mt-4 flex justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => sigCanvasRef.current?.clear()}
+                                    className="rounded-md border px-4 py-2 text-sm"
+                                >
+                                    Clear
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveSignature}
+                                    className="rounded-md bg-orange-500 px-4 py-2 text-sm text-white"
+                                >
+                                    Submit Signature
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
 
 
