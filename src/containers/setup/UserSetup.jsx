@@ -1,10 +1,24 @@
 import React from "react";
 import {
-  Building2, Building, MapPin, Search, Plus, Edit3, Trash2, Check, ChevronRight,
+  Building2,
+  Building,
+  MapPin,
+  Search,
+  Plus,
+  Edit3,
+  Trash2,
+  Check,
+  ChevronRight,
 } from "lucide-react";
 import {
-  createOrganization, updateOrganization, deleteOrganization, getOrganizationDetailsById,
-  createCompany, getCompanyDetailsById, createEntity,
+  createOrganization,
+  getOrganization,
+  updateOrganization,
+  deleteOrganization,
+  getOrganizationDetailsById,
+  createCompany,
+  getCompanyDetailsById,
+  createEntity,
 } from "../../api";
 import axios from "axios";
 import { toast } from "react-hot-toast";
@@ -63,25 +77,46 @@ const UserSetup = () => {
   const [orgSearch, setOrgSearch] = React.useState("");
   const [companyDetails, setCompanyDetails] = React.useState([]);
   const [companyForm, setCompanyForm] = React.useState({
-    name: "", entity_name: "", country: "", state_name: "",
-    region: "", zone_name: "", sub_domain: "", pincode: ""
+    name: "",
+    entity_name: "",
+    country: "",
+    state_name: "",
+    region: "",
+    zone_name: "",
+    sub_domain: "",
+    pincode: "",
   });
   const [entityStepOrgs, setEntityStepOrgs] = React.useState([]);
   const [entityStepCompanies, setEntityStepCompanies] = React.useState([]);
   const [selectedEntityOrgId, setSelectedEntityOrgId] = React.useState(null);
-  const [selectedEntityCompanyId, setSelectedEntityCompanyId] = React.useState(null);
+  const [selectedEntityCompanyId, setSelectedEntityCompanyId] =
+    React.useState(null);
   const [entityForm, setEntityForm] = React.useState({
-    name: "", state: "", region: "", zone: ""
+    name: "",
+    state: "",
+    region: "",
+    zone: "",
   });
 
   // API handlers
+  // const fetchOrganizations = async () => {
+  //   try {
+  //     const response = await getOrganizationDetailsById(userId);
+  //     setOrganizationDetails(Array.isArray(response.data) ? response.data : []);
+  //   } catch {
+  //     setOrganizationDetails([]);
+  //   }
+  // };
+
   const fetchOrganizations = async () => {
     try {
-      const response = await getOrganizationDetailsById(userId);
+      const response = await getOrganization();
       setOrganizationDetails(Array.isArray(response.data) ? response.data : []);
-    } catch { setOrganizationDetails([]); }
+    } catch {
+      setOrganizationDetails([]);
+    }
   };
-  
+
   const fetchCompanies = async (orgId) => {
     if (!orgId) return setCompanyDetails([]);
     try {
@@ -89,7 +124,9 @@ const UserSetup = () => {
       if (response.data && response.data.data && response.data.data.company) {
         setCompanyDetails(response.data.data.company);
       } else setCompanyDetails([]);
-    } catch { setCompanyDetails([]); }
+    } catch {
+      setCompanyDetails([]);
+    }
   };
   // const local = "192.168.29.79:8002/api";
   const local = "192.168.29.79:8002/api";
@@ -103,12 +140,19 @@ const UserSetup = () => {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("ACCESS_TOKEN")}`,
           },
-        }
+        },
       );
-      setEntityStepOrgs(Array.isArray(response.data.organizations) ? response.data.organizations : []);
-      setEntityStepCompanies(Array.isArray(response.data.companies) ? response.data.companies : []);
+      setEntityStepOrgs(
+        Array.isArray(response.data.organizations)
+          ? response.data.organizations
+          : [],
+      );
+      setEntityStepCompanies(
+        Array.isArray(response.data.companies) ? response.data.companies : [],
+      );
     } catch {
-      setEntityStepOrgs([]); setEntityStepCompanies([]);
+      setEntityStepOrgs([]);
+      setEntityStepCompanies([]);
     }
   };
 
@@ -133,19 +177,26 @@ const UserSetup = () => {
         active: true,
       });
       toast.success("Organization added!");
-      setOrganizationDetails(prev =>
-        [{ id: response.data.id, organization_name: orgForm.organization_name }, ...prev]
-      );
+      setOrganizationDetails((prev) => [
+        { id: response.data.id, organization_name: orgForm.organization_name },
+        ...prev,
+      ]);
       setOrgForm({ organization_name: "" });
       setEditingOrg(null);
     } catch (error) {
       if (
         error?.response?.data?.non_field_errors &&
-        error.response.data.non_field_errors[0]?.includes("must make a unique set")
+        error.response.data.non_field_errors[0]?.includes(
+          "must make a unique set",
+        )
       ) {
-        toast.error("This organization already exists for this user. Please select it.");
+        toast.error(
+          "This organization already exists for this user. Please select it.",
+        );
       } else {
-        toast.error(error.response?.data?.message || "Failed to create organization.");
+        toast.error(
+          error.response?.data?.message || "Failed to create organization.",
+        );
       }
     } finally {
       setLoading(false);
@@ -171,8 +222,10 @@ const UserSetup = () => {
       setEditingName("");
       setOrganizationDetails((prev) =>
         prev.map((item) =>
-          item.id === org.id ? { ...item, organization_name: editingName } : item
-        )
+          item.id === org.id
+            ? { ...item, organization_name: editingName }
+            : item,
+        ),
       );
       fetchOrganizations();
     } catch (error) {
@@ -180,12 +233,17 @@ const UserSetup = () => {
     }
   };
   const handleDeleteOrg = async (org) => {
-    if (!window.confirm(`Delete organization "${org.organization_name}"? This cannot be undone!`)) return;
+    if (
+      !window.confirm(
+        `Delete organization "${org.organization_name}"? This cannot be undone!`,
+      )
+    )
+      return;
     try {
       await deleteOrganization(org.id);
       toast.success("Organization deleted!");
       setOrganizationDetails((prev) =>
-        prev.filter((item) => item.id !== org.id)
+        prev.filter((item) => item.id !== org.id),
       );
       fetchOrganizations();
     } catch (error) {
@@ -231,8 +289,14 @@ const UserSetup = () => {
       if (response.status === 200 && response.data.data) {
         toast.success(response.data.message || "Company created!");
         setCompanyForm({
-          name: "", entity_name: "", country: "", state_name: "",
-          region: "", zone_name: "", sub_domain: "", pincode: ""
+          name: "",
+          entity_name: "",
+          country: "",
+          state_name: "",
+          region: "",
+          zone_name: "",
+          sub_domain: "",
+          pincode: "",
         });
         setSetup("entity");
         setSelectedEntityOrgId(selectedOrgId);
@@ -242,52 +306,61 @@ const UserSetup = () => {
     } catch (error) {
       if (
         error?.response?.data?.non_field_errors &&
-        error.response.data.non_field_errors[0]?.includes("must make a unique set")
+        error.response.data.non_field_errors[0]?.includes(
+          "must make a unique set",
+        )
       ) {
-        toast.error("A company with this name already exists for the selected organization. Please use a different name or select the existing company.");
+        toast.error(
+          "A company with this name already exists for the selected organization. Please use a different name or select the existing company.",
+        );
       } else {
         toast.error(error.response?.data?.message || "Error creating company.");
       }
     }
   };
-  
+
   const [setupCompleted, setSetupCompleted] = React.useState(false);
   // Entity handlers
   const handleEntitySubmit = async (e) => {
-  e.preventDefault();
-  if (!selectedEntityCompanyId) {
-    toast.error("Please select a company first.");
-    return;
-  }
-  const payload = {
-    ...entityForm,
-    company: selectedEntityCompanyId,
-    created_by: userId,
-  };
-  const selectedOrg = entityStepOrgs.find((o) => o.id === selectedEntityOrgId);
-  try {
-    const response = await createEntity(payload);
-    if (response.status === 200 && response.data.success) {
-      toast.success(
-        `Setup successful! Organization: ${selectedOrg?.organization_name || ""}`
-      );
-      setEntityForm({ name: "", state: "", region: "", zone: "" });
-      setSetupCompleted(true); // <-- ADD THIS LINE
-    } else {
-      toast.error(response.data.message || "Error creating entity.");
+    e.preventDefault();
+    if (!selectedEntityCompanyId) {
+      toast.error("Please select a company first.");
+      return;
     }
-  } catch (error) {
-    toast.error(error.response?.data?.message || error.message || "Unexpected error creating entity.");
-  }
-};
-
+    const payload = {
+      ...entityForm,
+      company: selectedEntityCompanyId,
+      created_by: userId,
+    };
+    const selectedOrg = entityStepOrgs.find(
+      (o) => o.id === selectedEntityOrgId,
+    );
+    try {
+      const response = await createEntity(payload);
+      if (response.status === 200 && response.data.success) {
+        toast.success(
+          `Setup successful! Organization: ${selectedOrg?.organization_name || ""}`,
+        );
+        setEntityForm({ name: "", state: "", region: "", zone: "" });
+        setSetupCompleted(true); // <-- ADD THIS LINE
+      } else {
+        toast.error(response.data.message || "Error creating entity.");
+      }
+    } catch (error) {
+      toast.error(
+        error.response?.data?.message ||
+          error.message ||
+          "Unexpected error creating entity.",
+      );
+    }
+  };
 
   // Filtering
   const filteredCompaniesForEntity = selectedEntityOrgId
     ? entityStepCompanies.filter((c) => c.organization === selectedEntityOrgId)
     : [];
-  const filteredOrgs = organizationDetails.filter(org =>
-    org.organization_name.toLowerCase().includes(orgSearch.toLowerCase())
+  const filteredOrgs = organizationDetails.filter((org) =>
+    org.organization_name.toLowerCase().includes(orgSearch.toLowerCase()),
   );
 
   // THEME palette
@@ -298,10 +371,6 @@ const UserSetup = () => {
   const borderColor = ORANGE;
   const textColor = theme === "dark" ? "#fff" : "#222";
   const iconColor = ORANGE;
-
-
-    
-
 
   return (
     <div
@@ -323,9 +392,7 @@ const UserSetup = () => {
         className="flex flex-col items-center"
       >
         {/* Theme Toggle */}
-        <div className="flex justify-end w-full max-w-5xl mb-2 pr-6">
-         
-        </div>
+        <div className="flex justify-end w-full max-w-5xl mb-2 pr-6"></div>
         {/* Stepper */}
         {/* <div className="flex items-center gap-6 justify-center w-full max-w-4xl mb-8">
           {[
@@ -384,77 +451,86 @@ const UserSetup = () => {
           })}
         </div> */}
 
-       <div className="flex items-center gap-6 justify-center w-full max-w-4xl mb-8">
-  {[
-    { key: "organization", label: "Setup Organization", icon: Building2 },
-    { key: "company", label: "Setup Company", icon: Building },
-    { key: "entity", label: "Setup Entity", icon: MapPin },
-  ].map((step) => {
-    const Icon = step.icon;
-    const isActive = setup === step.key;
-    let disabled = false;
-    if (!setupCompleted) {
-      if (step.key === "organization") {
-        disabled = false;
-      } else if (step.key === "company") {
-        disabled = !selectedOrgId;
-      } else if (step.key === "entity") {
-        // NEW LOGIC:
-        const hasCompanies = companyDetails && companyDetails.length > 0;
-        disabled = !(selectedEntityCompanyId || hasCompanies);
-      }
-    }
-    return (
-      <button
-        key={step.key}
-        onClick={() => { if (!disabled) setSetup(step.key); }}
-        className="group flex flex-col items-center px-2 py-2 focus:outline-none"
-        style={{
-          opacity: disabled ? 0.5 : 1,
-          pointerEvents: disabled ? "none" : "auto",
-          cursor: disabled ? "not-allowed" : "pointer",
-          transform: isActive ? "scale(1.07)" : "scale(1)",
-          transition: "transform 0.2s",
-        }}
-        disabled={disabled}
-      >
-        <div
-          className="relative rounded-2xl flex items-center justify-center mb-2 transition-all duration-300"
-          style={{
-            width: 52,
-            height: 52,
-            background: isActive ? ORANGE : cardColor,
-            color: isActive ? "#fff" : iconColor,
-            boxShadow: isActive
-              ? "0 4px 24px #ffbe6333"
-              : "none",
-            border: `2px solid ${ORANGE}`,
-          }}
-        >
-          <Icon className="w-7 h-7" style={{ color: isActive ? "#fff" : ORANGE }} />
-          {isActive && (
-            <div className="absolute inset-0 rounded-2xl bg-white/10 animate-pulse"></div>
-          )}
+        <div className="flex items-center gap-6 justify-center w-full max-w-4xl mb-8">
+          {[
+            {
+              key: "organization",
+              label: "Setup Organization",
+              icon: Building2,
+            },
+            { key: "company", label: "Setup Company", icon: Building },
+            { key: "entity", label: "Setup Entity", icon: MapPin },
+          ].map((step) => {
+            const Icon = step.icon;
+            const isActive = setup === step.key;
+            let disabled = false;
+            if (!setupCompleted) {
+              if (step.key === "organization") {
+                disabled = false;
+              } else if (step.key === "company") {
+                disabled = !selectedOrgId;
+              } else if (step.key === "entity") {
+                // NEW LOGIC:
+                const hasCompanies =
+                  companyDetails && companyDetails.length > 0;
+                disabled = !(selectedEntityCompanyId || hasCompanies);
+              }
+            }
+            return (
+              <button
+                key={step.key}
+                onClick={() => {
+                  if (!disabled) setSetup(step.key);
+                }}
+                className="group flex flex-col items-center px-2 py-2 focus:outline-none"
+                style={{
+                  opacity: disabled ? 0.5 : 1,
+                  pointerEvents: disabled ? "none" : "auto",
+                  cursor: disabled ? "not-allowed" : "pointer",
+                  transform: isActive ? "scale(1.07)" : "scale(1)",
+                  transition: "transform 0.2s",
+                }}
+                disabled={disabled}
+              >
+                <div
+                  className="relative rounded-2xl flex items-center justify-center mb-2 transition-all duration-300"
+                  style={{
+                    width: 52,
+                    height: 52,
+                    background: isActive ? ORANGE : cardColor,
+                    color: isActive ? "#fff" : iconColor,
+                    boxShadow: isActive ? "0 4px 24px #ffbe6333" : "none",
+                    border: `2px solid ${ORANGE}`,
+                  }}
+                >
+                  <Icon
+                    className="w-7 h-7"
+                    style={{ color: isActive ? "#fff" : ORANGE }}
+                  />
+                  {isActive && (
+                    <div className="absolute inset-0 rounded-2xl bg-white/10 animate-pulse"></div>
+                  )}
+                </div>
+                <span
+                  className="text-xs font-semibold tracking-wide"
+                  style={{
+                    color: ORANGE,
+                    fontWeight: isActive ? "bold" : "normal",
+                  }}
+                >
+                  {step.label}
+                </span>
+              </button>
+            );
+          })}
         </div>
-        <span
-          className="text-xs font-semibold tracking-wide"
-          style={{
-            color: ORANGE,
-            fontWeight: isActive ? "bold" : "normal",
-          }}
-        >
-          {step.label}
-        </span>
-      </button>
-    );
-  })}
-</div>
-
-
       </div>
 
       {/* Dynamic Form Content */}
-      <div className="w-full flex flex-col items-center justify-center py-8 px-4" style={{ minHeight: "60vh" }}>
+      <div
+        className="w-full flex flex-col items-center justify-center py-8 px-4"
+        style={{ minHeight: "60vh" }}
+      >
         {/* --- ORGANIZATION STEP --- */}
         {setup === "organization" && (
           <div
@@ -468,20 +544,30 @@ const UserSetup = () => {
           >
             {/* Search bar */}
             <div className="relative w-full max-w-xl mb-8">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2" style={{ color: iconColor }} />
+              <Search
+                className="absolute left-3 top-1/2 transform -translate-y-1/2"
+                style={{ color: iconColor }}
+              />
               <input
                 type="text"
                 value={orgSearch}
-                onChange={e => setOrgSearch(e.target.value)}
+                onChange={(e) => setOrgSearch(e.target.value)}
                 className="w-full rounded-2xl pl-10 pr-4 py-3 border"
-                style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                style={{
+                  borderColor: ORANGE,
+                  background: theme === "dark" ? "#191922" : "#f8f7fa",
+                  color: textColor,
+                }}
                 placeholder="Search organizations..."
               />
             </div>
             {/* Organization Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full mb-8 min-h-[180px]">
               {filteredOrgs.length === 0 && orgSearch && (
-                <div className="col-span-full text-center text-lg py-12" style={{ color: ORANGE }}>
+                <div
+                  className="col-span-full text-center text-lg py-12"
+                  style={{ color: ORANGE }}
+                >
                   No organizations found
                 </div>
               )}
@@ -498,23 +584,36 @@ const UserSetup = () => {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <Building2 className="w-5 h-5" style={{ color: ORANGE }} />
-                      <span className="font-semibold">{org.organization_name}</span>
+                      <Building2
+                        className="w-5 h-5"
+                        style={{ color: ORANGE }}
+                      />
+                      <span className="font-semibold">
+                        {org.organization_name}
+                      </span>
                     </div>
-                    {selectedOrgId === org.id && <Check className="w-5 h-5" style={{ color: "#fff" }} />}
+                    {selectedOrgId === org.id && (
+                      <Check className="w-5 h-5" style={{ color: "#fff" }} />
+                    )}
                   </div>
                   {/* Edit/Delete visible only for Superadmin */}
                   {canEditOrg && selectedOrgId === org.id && (
                     <div className="mt-3 flex gap-2">
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleEditOrg(org); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditOrg(org);
+                        }}
                         className="p-1.5 rounded-lg"
                         style={{ background: "rgba(255,255,255,0.25)" }}
                       >
                         <Edit3 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteOrg(org); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteOrg(org);
+                        }}
                         className="p-1.5 rounded-lg"
                         style={{ background: "rgba(255,255,255,0.25)" }}
                       >
@@ -552,7 +651,12 @@ const UserSetup = () => {
                 <input
                   name="organization_name"
                   value={orgForm.organization_name}
-                  onChange={e => setOrgForm({ ...orgForm, organization_name: e.target.value })}
+                  onChange={(e) =>
+                    setOrgForm({
+                      ...orgForm,
+                      organization_name: e.target.value,
+                    })
+                  }
                   placeholder="Enter organization name"
                   className="w-full rounded-xl px-4 py-3 border"
                   style={{ borderColor: ORANGE }}
@@ -563,7 +667,11 @@ const UserSetup = () => {
                   <button
                     type="submit"
                     className="rounded-xl px-8 py-3 font-semibold"
-                    style={{ background: ORANGE, color: "#fff", opacity: loading ? 0.7 : 1 }}
+                    style={{
+                      background: ORANGE,
+                      color: "#fff",
+                      opacity: loading ? 0.7 : 1,
+                    }}
                     disabled={loading}
                   >
                     {loading ? "Adding..." : "Add Organization"}
@@ -574,7 +682,7 @@ const UserSetup = () => {
                     style={{
                       borderColor: ORANGE,
                       color: ORANGE,
-                      background: "#fff"
+                      background: "#fff",
                     }}
                     onClick={() => setEditingOrg(null)}
                   >
@@ -587,14 +695,16 @@ const UserSetup = () => {
               <form
                 className="w-full max-w-md flex flex-col items-center gap-4 p-6 border rounded-2xl"
                 style={{ background: "#fff", borderColor: ORANGE }}
-                onSubmit={e => {
+                onSubmit={(e) => {
                   e.preventDefault();
-                  handleUpdateOrg(filteredOrgs.find(o => o.id === editingOrg));
+                  handleUpdateOrg(
+                    filteredOrgs.find((o) => o.id === editingOrg),
+                  );
                 }}
               >
                 <input
                   value={editingName}
-                  onChange={e => setEditingName(e.target.value)}
+                  onChange={(e) => setEditingName(e.target.value)}
                   className="w-full rounded-xl px-4 py-3 border"
                   style={{ borderColor: ORANGE }}
                   required
@@ -614,7 +724,7 @@ const UserSetup = () => {
                     style={{
                       borderColor: ORANGE,
                       color: ORANGE,
-                      background: "#fff"
+                      background: "#fff",
                     }}
                     onClick={() => setEditingOrg(null)}
                   >
@@ -649,13 +759,23 @@ const UserSetup = () => {
                 minHeight: 400,
               }}
             >
-              <h3 className="mb-6 font-bold text-2xl flex items-center gap-3" style={{ color: ORANGE }}>
+              <h3
+                className="mb-6 font-bold text-2xl flex items-center gap-3"
+                style={{ color: ORANGE }}
+              >
                 <Building2 className="w-7 h-7" style={{ color: ORANGE }} />
                 Organizations & Companies
               </h3>
               {/* Organizations List */}
               <div className="mb-8">
-                <h4 className="text-sm font-semibold" style={{ color: ORANGE, textTransform: "uppercase", letterSpacing: "1.5px" }}>
+                <h4
+                  className="text-sm font-semibold"
+                  style={{
+                    color: ORANGE,
+                    textTransform: "uppercase",
+                    letterSpacing: "1.5px",
+                  }}
+                >
                   Organizations
                 </h4>
                 <div className="space-y-2 max-h-[220px] overflow-y-auto pr-2">
@@ -670,18 +790,31 @@ const UserSetup = () => {
                         onClick={() => handleSelectOrg(org)}
                         className="p-4 rounded-xl cursor-pointer transition-all duration-200"
                         style={{
-                          background: selectedOrgId === org.id ? ORANGE : cardColor,
+                          background:
+                            selectedOrgId === org.id ? ORANGE : cardColor,
                           color: selectedOrgId === org.id ? "#fff" : textColor,
                           border: `1.5px solid ${ORANGE}`,
                         }}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <span className="font-semibold text-sm">{idx + 1}</span>
-                            <Building2 className="w-4 h-4" style={{ color: ORANGE }} />
-                            <span className="font-medium">{org.organization_name}</span>
+                            <span className="font-semibold text-sm">
+                              {idx + 1}
+                            </span>
+                            <Building2
+                              className="w-4 h-4"
+                              style={{ color: ORANGE }}
+                            />
+                            <span className="font-medium">
+                              {org.organization_name}
+                            </span>
                           </div>
-                          {selectedOrgId === org.id && <Check className="w-5 h-5" style={{ color: "#fff" }} />}
+                          {selectedOrgId === org.id && (
+                            <Check
+                              className="w-5 h-5"
+                              style={{ color: "#fff" }}
+                            />
+                          )}
                         </div>
                       </div>
                     ))
@@ -690,13 +823,22 @@ const UserSetup = () => {
               </div>
               {/* Companies List */}
               <div>
-                <h4 className="text-sm font-semibold" style={{ color: ORANGE, textTransform: "uppercase", letterSpacing: "1.5px" }}>
+                <h4
+                  className="text-sm font-semibold"
+                  style={{
+                    color: ORANGE,
+                    textTransform: "uppercase",
+                    letterSpacing: "1.5px",
+                  }}
+                >
                   Companies
                 </h4>
                 <div className="space-y-2 max-h-[180px] overflow-y-auto pr-2">
                   {companyDetails.length === 0 ? (
                     <div className="text-center py-6" style={{ color: ORANGE }}>
-                      {selectedOrgId ? "No companies yet" : "Select an organization first"}
+                      {selectedOrgId
+                        ? "No companies yet"
+                        : "Select an organization first"}
                     </div>
                   ) : (
                     companyDetails.map((comp, idx) => (
@@ -710,8 +852,16 @@ const UserSetup = () => {
                         }}
                       >
                         <div className="flex items-center gap-3">
-                          <span className="font-semibold text-sm" style={{ color: ORANGE }}>{idx + 1}</span>
-                          <Building className="w-4 h-4" style={{ color: ORANGE }} />
+                          <span
+                            className="font-semibold text-sm"
+                            style={{ color: ORANGE }}
+                          >
+                            {idx + 1}
+                          </span>
+                          <Building
+                            className="w-4 h-4"
+                            style={{ color: ORANGE }}
+                          />
                           <span className="font-medium">{comp.name}</span>
                         </div>
                       </div>
@@ -731,92 +881,185 @@ const UserSetup = () => {
               }}
               onSubmit={handleCompanySubmit}
             >
-              <h3 className="font-bold text-2xl mb-6 flex items-center gap-3" style={{ color: ORANGE }}>
+              <h3
+                className="font-bold text-2xl mb-6 flex items-center gap-3"
+                style={{ color: ORANGE }}
+              >
                 <Building className="w-7 h-7" style={{ color: ORANGE }} />
                 Create New Company
               </h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: ORANGE }}>Company Name *</label>
+                  <label
+                    className="block text-sm font-medium mb-2"
+                    style={{ color: ORANGE }}
+                  >
+                    Company Name *
+                  </label>
                   <input
                     name="name"
                     value={companyForm.name}
-                    onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })}
+                    onChange={(e) =>
+                      setCompanyForm({ ...companyForm, name: e.target.value })
+                    }
                     placeholder="Enter company name"
                     className="w-full rounded-xl px-4 py-3 border"
-                    style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                    style={{
+                      borderColor: ORANGE,
+                      background: theme === "dark" ? "#191922" : "#f8f7fa",
+                      color: textColor,
+                    }}
                     required
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: ORANGE }}>Pincode</label>
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: ORANGE }}
+                    >
+                      Pincode
+                    </label>
                     <input
                       name="pincode"
                       value={companyForm.pincode}
                       onChange={handleCompanyPincodeChange}
                       placeholder="Pincode"
                       className="w-full rounded-xl px-4 py-3 border"
-                      style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                      style={{
+                        borderColor: ORANGE,
+                        background: theme === "dark" ? "#191922" : "#f8f7fa",
+                        color: textColor,
+                      }}
                       maxLength={6}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: ORANGE }}>Country</label>
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: ORANGE }}
+                    >
+                      Country
+                    </label>
                     <input
                       name="country"
                       value={companyForm.country}
-                      onChange={e => setCompanyForm({ ...companyForm, country: e.target.value })}
+                      onChange={(e) =>
+                        setCompanyForm({
+                          ...companyForm,
+                          country: e.target.value,
+                        })
+                      }
                       placeholder="Country"
                       className="w-full rounded-xl px-4 py-3 border"
-                      style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                      style={{
+                        borderColor: ORANGE,
+                        background: theme === "dark" ? "#191922" : "#f8f7fa",
+                        color: textColor,
+                      }}
                       readOnly
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: ORANGE }}>State</label>
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: ORANGE }}
+                    >
+                      State
+                    </label>
                     <input
                       name="state_name"
                       value={companyForm.state_name}
-                      onChange={e => setCompanyForm({ ...companyForm, state_name: e.target.value })}
+                      onChange={(e) =>
+                        setCompanyForm({
+                          ...companyForm,
+                          state_name: e.target.value,
+                        })
+                      }
                       placeholder="State"
                       className="w-full rounded-xl px-4 py-3 border"
-                      style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                      style={{
+                        borderColor: ORANGE,
+                        background: theme === "dark" ? "#191922" : "#f8f7fa",
+                        color: textColor,
+                      }}
                       readOnly
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: ORANGE }}>Region</label>
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: ORANGE }}
+                    >
+                      Region
+                    </label>
                     <input
                       name="region"
                       value={companyForm.region}
-                      onChange={e => setCompanyForm({ ...companyForm, region: e.target.value })}
+                      onChange={(e) =>
+                        setCompanyForm({
+                          ...companyForm,
+                          region: e.target.value,
+                        })
+                      }
                       placeholder="Region"
                       className="w-full rounded-xl px-4 py-3 border"
-                      style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                      style={{
+                        borderColor: ORANGE,
+                        background: theme === "dark" ? "#191922" : "#f8f7fa",
+                        color: textColor,
+                      }}
                       readOnly
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: ORANGE }}>Zone</label>
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: ORANGE }}
+                    >
+                      Zone
+                    </label>
                     <input
                       name="zone_name"
                       value={companyForm.zone_name}
-                      onChange={e => setCompanyForm({ ...companyForm, zone_name: e.target.value })}
+                      onChange={(e) =>
+                        setCompanyForm({
+                          ...companyForm,
+                          zone_name: e.target.value,
+                        })
+                      }
                       placeholder="Zone"
                       className="w-full rounded-xl px-4 py-3 border"
-                      style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                      style={{
+                        borderColor: ORANGE,
+                        background: theme === "dark" ? "#191922" : "#f8f7fa",
+                        color: textColor,
+                      }}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: ORANGE }}>Sub Domain</label>
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: ORANGE }}
+                    >
+                      Sub Domain
+                    </label>
                     <input
                       name="sub_domain"
                       value={companyForm.sub_domain}
-                      onChange={e => setCompanyForm({ ...companyForm, sub_domain: e.target.value })}
+                      onChange={(e) =>
+                        setCompanyForm({
+                          ...companyForm,
+                          sub_domain: e.target.value,
+                        })
+                      }
                       placeholder="Sub domain"
                       className="w-full rounded-xl px-4 py-3 border"
-                      style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                      style={{
+                        borderColor: ORANGE,
+                        background: theme === "dark" ? "#191922" : "#f8f7fa",
+                        color: textColor,
+                      }}
                     />
                   </div>
                 </div>
@@ -846,13 +1089,23 @@ const UserSetup = () => {
                 minHeight: 400,
               }}
             >
-              <h3 className="mb-6 font-bold text-2xl flex items-center gap-3" style={{ color: ORANGE }}>
+              <h3
+                className="mb-6 font-bold text-2xl flex items-center gap-3"
+                style={{ color: ORANGE }}
+              >
                 <MapPin className="w-7 h-7" style={{ color: ORANGE }} />
                 Select Organization & Company
               </h3>
               {/* Organizations */}
               <div className="mb-8">
-                <h4 className="text-sm font-semibold mb-4" style={{ color: ORANGE, textTransform: "uppercase", letterSpacing: "1.5px" }}>
+                <h4
+                  className="text-sm font-semibold mb-4"
+                  style={{
+                    color: ORANGE,
+                    textTransform: "uppercase",
+                    letterSpacing: "1.5px",
+                  }}
+                >
                   Select Organization
                 </h4>
                 <div className="space-y-2 max-h-[220px] overflow-y-auto pr-2">
@@ -870,18 +1123,32 @@ const UserSetup = () => {
                         }}
                         className="p-4 rounded-xl cursor-pointer transition-all duration-200"
                         style={{
-                          background: selectedEntityOrgId === org.id ? ORANGE : cardColor,
-                          color: selectedEntityOrgId === org.id ? "#fff" : textColor,
+                          background:
+                            selectedEntityOrgId === org.id ? ORANGE : cardColor,
+                          color:
+                            selectedEntityOrgId === org.id ? "#fff" : textColor,
                           border: `1.5px solid ${ORANGE}`,
                         }}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <span className="font-semibold text-sm">{idx + 1}</span>
-                            <Building2 className="w-4 h-4" style={{ color: ORANGE }} />
-                            <span className="font-medium">{org.organization_name}</span>
+                            <span className="font-semibold text-sm">
+                              {idx + 1}
+                            </span>
+                            <Building2
+                              className="w-4 h-4"
+                              style={{ color: ORANGE }}
+                            />
+                            <span className="font-medium">
+                              {org.organization_name}
+                            </span>
                           </div>
-                          {selectedEntityOrgId === org.id && <Check className="w-5 h-5" style={{ color: "#fff" }} />}
+                          {selectedEntityOrgId === org.id && (
+                            <Check
+                              className="w-5 h-5"
+                              style={{ color: "#fff" }}
+                            />
+                          )}
                         </div>
                       </div>
                     ))
@@ -891,12 +1158,22 @@ const UserSetup = () => {
               {/* Companies */}
               {selectedEntityOrgId && (
                 <div>
-                  <h4 className="text-sm font-semibold mb-4" style={{ color: ORANGE, textTransform: "uppercase", letterSpacing: "1.5px" }}>
+                  <h4
+                    className="text-sm font-semibold mb-4"
+                    style={{
+                      color: ORANGE,
+                      textTransform: "uppercase",
+                      letterSpacing: "1.5px",
+                    }}
+                  >
                     Select Company
                   </h4>
                   <div className="space-y-2 max-h-[220px] overflow-y-auto pr-2">
                     {filteredCompaniesForEntity.length === 0 ? (
-                      <div className="text-center py-6" style={{ color: ORANGE }}>
+                      <div
+                        className="text-center py-6"
+                        style={{ color: ORANGE }}
+                      >
                         No companies available
                       </div>
                     ) : (
@@ -906,18 +1183,34 @@ const UserSetup = () => {
                           onClick={() => setSelectedEntityCompanyId(comp.id)}
                           className="p-4 rounded-xl cursor-pointer transition-all duration-200"
                           style={{
-                            background: selectedEntityCompanyId === comp.id ? ORANGE : cardColor,
-                            color: selectedEntityCompanyId === comp.id ? "#fff" : textColor,
+                            background:
+                              selectedEntityCompanyId === comp.id
+                                ? ORANGE
+                                : cardColor,
+                            color:
+                              selectedEntityCompanyId === comp.id
+                                ? "#fff"
+                                : textColor,
                             border: `1.5px solid ${ORANGE}`,
                           }}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <span className="font-semibold text-sm">{idx + 1}</span>
-                              <Building className="w-4 h-4" style={{ color: ORANGE }} />
+                              <span className="font-semibold text-sm">
+                                {idx + 1}
+                              </span>
+                              <Building
+                                className="w-4 h-4"
+                                style={{ color: ORANGE }}
+                              />
                               <span className="font-medium">{comp.name}</span>
                             </div>
-                            {selectedEntityCompanyId === comp.id && <Check className="w-5 h-5" style={{ color: "#fff" }} />}
+                            {selectedEntityCompanyId === comp.id && (
+                              <Check
+                                className="w-5 h-5"
+                                style={{ color: "#fff" }}
+                              />
+                            )}
                           </div>
                         </div>
                       ))
@@ -937,55 +1230,102 @@ const UserSetup = () => {
               }}
               onSubmit={handleEntitySubmit}
             >
-              <h3 className="font-bold text-2xl mb-6 flex items-center gap-3" style={{ color: ORANGE }}>
+              <h3
+                className="font-bold text-2xl mb-6 flex items-center gap-3"
+                style={{ color: ORANGE }}
+              >
                 <MapPin className="w-7 h-7" style={{ color: ORANGE }} />
                 Create New Entity
               </h3>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: ORANGE }}>Entity Name *</label>
+                  <label
+                    className="block text-sm font-medium mb-2"
+                    style={{ color: ORANGE }}
+                  >
+                    Entity Name *
+                  </label>
                   <input
                     name="name"
                     value={entityForm.name}
-                    onChange={e => setEntityForm({ ...entityForm, name: e.target.value })}
+                    onChange={(e) =>
+                      setEntityForm({ ...entityForm, name: e.target.value })
+                    }
                     placeholder="Enter entity name"
                     className="w-full rounded-xl px-4 py-3 border"
-                    style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                    style={{
+                      borderColor: ORANGE,
+                      background: theme === "dark" ? "#191922" : "#f8f7fa",
+                      color: textColor,
+                    }}
                     required
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: ORANGE }}>State</label>
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: ORANGE }}
+                    >
+                      State
+                    </label>
                     <input
                       name="state"
                       value={entityForm.state}
-                      onChange={e => setEntityForm({ ...entityForm, state: e.target.value })}
+                      onChange={(e) =>
+                        setEntityForm({ ...entityForm, state: e.target.value })
+                      }
                       placeholder="State"
                       className="w-full rounded-xl px-4 py-3 border"
-                      style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                      style={{
+                        borderColor: ORANGE,
+                        background: theme === "dark" ? "#191922" : "#f8f7fa",
+                        color: textColor,
+                      }}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2" style={{ color: ORANGE }}>Region</label>
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: ORANGE }}
+                    >
+                      Region
+                    </label>
                     <input
                       name="region"
                       value={entityForm.region}
-                      onChange={e => setEntityForm({ ...entityForm, region: e.target.value })}
+                      onChange={(e) =>
+                        setEntityForm({ ...entityForm, region: e.target.value })
+                      }
                       placeholder="Region"
                       className="w-full rounded-xl px-4 py-3 border"
-                      style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                      style={{
+                        borderColor: ORANGE,
+                        background: theme === "dark" ? "#191922" : "#f8f7fa",
+                        color: textColor,
+                      }}
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium mb-2" style={{ color: ORANGE }}>Zone</label>
+                    <label
+                      className="block text-sm font-medium mb-2"
+                      style={{ color: ORANGE }}
+                    >
+                      Zone
+                    </label>
                     <input
                       name="zone"
                       value={entityForm.zone}
-                      onChange={e => setEntityForm({ ...entityForm, zone: e.target.value })}
+                      onChange={(e) =>
+                        setEntityForm({ ...entityForm, zone: e.target.value })
+                      }
                       placeholder="Zone"
                       className="w-full rounded-xl px-4 py-3 border"
-                      style={{ borderColor: ORANGE, background: theme === "dark" ? "#191922" : "#f8f7fa", color: textColor }}
+                      style={{
+                        borderColor: ORANGE,
+                        background: theme === "dark" ? "#191922" : "#f8f7fa",
+                        color: textColor,
+                      }}
                     />
                   </div>
                 </div>
@@ -995,14 +1335,21 @@ const UserSetup = () => {
                     style={{
                       background: "#ffbe6330",
                       border: `1.5px solid ${ORANGE}`,
-                      color: ORANGE
+                      color: ORANGE,
                     }}
                   >
                     <p className="text-sm">
                       <span className="font-semibold">Selected: </span>
-                      {entityStepOrgs.find(o => o.id === selectedEntityOrgId)?.organization_name} →
-                      {" "}
-                      {filteredCompaniesForEntity.find(c => c.id === selectedEntityCompanyId)?.name}
+                      {
+                        entityStepOrgs.find((o) => o.id === selectedEntityOrgId)
+                          ?.organization_name
+                      }{" "}
+                      →{" "}
+                      {
+                        filteredCompaniesForEntity.find(
+                          (c) => c.id === selectedEntityCompanyId,
+                        )?.name
+                      }
                     </p>
                   </div>
                 )}

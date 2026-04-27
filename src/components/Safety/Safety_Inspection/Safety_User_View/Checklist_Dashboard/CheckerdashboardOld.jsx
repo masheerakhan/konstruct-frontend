@@ -12,14 +12,8 @@ import {
     Upload,
 } from "lucide-react";
 
-import { getCurrentUserId } from "../../../../../utils/UserUtils";
-import {
-  approveSafetyChecklist,
-  getSafetyChecklist,
-  listSafetyChecklists,
-  rejectSafetyChecklist,
-  resolveActiveProjectId,
-} from "../../../../../api";
+import { fileToBase64, getCurrentUserId } from "../../../../../utils/UserUtils";
+import { approveSafetyChecklist, getSafetyChecklist, listSafetyChecklists, rejectSafetyChecklist, resolveActiveProjectId } from "../../../../../api";
 import { showToast } from "../../../../../utils/toast";
 import SignatureCanvas from "react-signature-canvas";
 
@@ -49,46 +43,34 @@ const NoPhotoLabel = () => (
     </span>
 );
 
-const PhotoUploadArea = ({ id, previewBase64, onFileChange, label = "Attach photo" }) => {
-    const previewUrl = previewBase64
-        ? typeof previewBase64 === "string"
-            ? previewBase64
-            : URL.createObjectURL(previewBase64)
-        : null;
-
-    return (
-        <div className="mt-3">
-            <p className="mb-1.5 text-xs font-medium text-muted-foreground">{label}</p>
-            {previewUrl ? (
-                <div className="relative inline-block">
-                    <img
-                        src={previewUrl}
-                        alt="Preview"
-                        className="h-20 w-20 rounded-lg border border-border object-cover shadow-sm"
-                    />
-                    <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-white shadow">
-                        <Check className="h-3 w-3" />
-                    </span>
-                </div>
-            ) : (
-                <label
-                    htmlFor={`photo-upload-${id}`}
-                    className="flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/60"
-                >
-                    <Upload className="h-4 w-4" />
-                    <span>Click to upload or take a photo</span>
-                </label>
-            )}
-            <input
-                id={`photo-upload-${id}`}
-                type="file"
-                accept="image/*"
-                onChange={onFileChange}
-                className="hidden"
-            />
-        </div>
-    );
-};
+const PhotoUploadArea = ({ id, previewBase64, onFileChange, label = "Attach photo" }) => (
+    <div className="mt-3">
+        <p className="mb-1.5 text-xs font-medium text-muted-foreground">{label}</p>
+        {previewBase64 ? (
+            <div className="relative inline-block">
+                <img src={previewBase64} alt="Preview" className="h-20 w-20 rounded-lg border border-border object-cover shadow-sm" />
+                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-white shadow">
+                    <Check className="h-3 w-3" />
+                </span>
+            </div>
+        ) : (
+            <label
+                htmlFor={`photo-upload-${id}`}
+                className="flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/60"
+            >
+                <Upload className="h-4 w-4" />
+                <span>Click to upload or take a photo</span>
+            </label>
+        )}
+        <input
+            id={`photo-upload-${id}`}
+            type="file"
+            accept="image/*"
+            onChange={onFileChange}
+            className="hidden"
+        />
+    </div>
+);
 
 const YesNoButtons = ({ value, onChange }) => (
     <div className="flex gap-2">
@@ -335,36 +317,23 @@ export default function CheckerDashboard() {
         setSubmitting(true);
         try {
             if (failIds.length > 0) {
-                const rejections = failIds.map((submissionId) => ({
-                    submission_id: submissionId,
-                    checker_remarks: inspectionRemarks[submissionId] || "",
-                }));
-
-                const formData = new FormData();
-                formData.append("submission_ids", JSON.stringify(failIds));
-                formData.append("rejections", JSON.stringify(rejections));
-
-                rejections.forEach((rej) => {
-                    const file = reviewerMedia[rej.submission_id];
-                    if (file) {
-                        formData.append("reviewer_media", file);
-                    }
+                const rejections = failIds.map((submissionId) => {
+                    const row = { submission_id: submissionId };
+                    const b64 = reviewerMedia[submissionId];
+                    if (b64) row.reviewer_media_base64 = b64;
+                    return row;
                 });
-
-                await rejectSafetyChecklist(detail.id, formData);
+                await rejectSafetyChecklist(detail.id, { submission_ids: failIds, rejections });
                 showToast("Inspection submitted. Fix requests sent to Maker.", "success");
-
             } else {
                 const submissions = allSubs.map((sub) => {
-                    const row = {
-                        submission_id: sub.id,
-                        answer: inspectionAnswers[sub.id] || "yes",
-                    };
-
-                    if ((inspectionAnswers[sub.id] || "yes") === "na") {
+                    const row = { submission_id: sub.id };
+                    const b64 = reviewerMedia[sub.id];
+                    if (b64) row.reviewer_media_base64 = b64;
+                    row.answer = inspectionAnswers[sub.id] || "yes";
+                    if (inspectionAnswers[sub.id] === "na") {
                         row.checker_remarks = (inspectionRemarks[sub.id] || "").trim();
                     }
-
                     return row;
                 });
                 setPendingApprovePayload({ submissions });
@@ -406,38 +375,25 @@ export default function CheckerDashboard() {
         setSubmitting(true);
         try {
             if (rejectIds.length > 0) {
-                const rejections = rejectIds.map((submissionId) => ({
-                    submission_id: submissionId,
-                    checker_remarks: verificationRemarks[submissionId] || "",
-                }));
-
-                const formData = new FormData();
-                formData.append("submission_ids", JSON.stringify(rejectIds));
-                formData.append("rejections", JSON.stringify(rejections));
-
-                rejections.forEach((rej) => {
-                    const file = reviewerMedia[rej.submission_id];
-                    if (file) {
-                        formData.append("reviewer_media", file);
-                    }
+                const rejections = rejectIds.map((submissionId) => {
+                    const row = { submission_id: submissionId };
+                    const b64 = reviewerMedia[submissionId];
+                    if (b64) row.reviewer_media_base64 = b64;
+                    return row;
                 });
-
-                await rejectSafetyChecklist(detail.id, formData);
+                await rejectSafetyChecklist(detail.id, { submission_ids: rejectIds, rejections });
                 showToast("Rejected fixes sent back to Maker.", "success");
             } else {
                 const submissions = subs.map((sub) => {
-                    const row = {
-                        submission_id: sub.id,
-                        answer: verificationAnswers[sub.id] || "yes",
-                    };
-
-                    if ((verificationAnswers[sub.id] || "yes") === "na") {
+                    const row = { submission_id: sub.id };
+                    const b64 = reviewerMedia[sub.id];
+                    if (b64) row.reviewer_media_base64 = b64;
+                    row.answer = verificationAnswers[sub.id] || "yes";
+                    if (verificationAnswers[sub.id] === "na") {
                         row.checker_remarks = (verificationRemarks[sub.id] || "").trim();
                     }
-
                     return row;
                 });
-
                 setPendingApprovePayload({ submissions });
                 setIsSignatureModalOpen(true);
                 return;
@@ -458,50 +414,81 @@ export default function CheckerDashboard() {
         if (sigCanvasRef.current) sigCanvasRef.current.clear();
     };
 
-    const handleSubmitWithSignature = async () => {
-        if (!detail || !pendingApprovePayload) return;
-        if (!sigCanvasRef.current || sigCanvasRef.current.isEmpty()) {
-            showToast("Please provide your signature.", "error");
-            return;
-        }
-        const dataUrl = sigCanvasRef.current.toDataURL("image/png");
-        const base64Part = dataUrl.split(",")[1] || "";
-        if (!base64Part) {
-            showToast("Could not capture signature. Try again.", "error");
-            return;
-        }
-        const binary = atob(base64Part);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-        const signatureFile = new File(
-            [bytes],
-            `checker-signature-${detail.id}.png`,
-            { type: "image/png" }
-        );
-        const formData = new FormData();
-        formData.append("submissions", JSON.stringify(pendingApprovePayload.submissions || []));
-        (pendingApprovePayload.submissions || []).forEach((sub) => {
-            const file = reviewerMedia[sub.submission_id];
-            if (file) {
-                formData.append("reviewer_media", file);
-            }
-        });
-        formData.append("checker_signature", signatureFile);
-        setSignatureSubmitting(true);
-        try {
-            await approveSafetyChecklist(detail.id, formData);
-            showToast("Verification approved successfully.", "success");
-            handleCloseSignatureModal();
-            backToDashboard();
-            fetchList();
-        } catch (err) {
-            showToast(err?.response?.data?.detail || "Signature submit failed", "error");
-        } finally {
-            setSignatureSubmitting(false);
-        }
-    };
+    // const handleSubmitWithSignature = async () => {
+    //     if (!detail || !pendingApprovePayload) return;
+    //     if (!sigCanvasRef.current || sigCanvasRef.current.isEmpty()) {
+    //         showToast("Please provide your signature.", "error");
+    //         return;
+    //     }
+    //     const dataUrl = sigCanvasRef.current.toDataURL("image/png");
+    //     const signatureBase64 = dataUrl.split(",")[1] || "";
+    //     if (!signatureBase64) {
+    //         showToast("Could not capture signature. Try again.", "error");
+    //         return;
+    //     }
+    //     setSignatureSubmitting(true);
+    //     try {
+    //         await approveSafetyChecklist(detail.id, {
+    //             ...pendingApprovePayload,
+    //             checker_signature_base64: signatureBase64,
+    //         });
+    //         showToast("Verification approved successfully.", "success");
+    //         handleCloseSignatureModal();
+    //         backToDashboard();
+    //         fetchList();
+    //     } catch (err) {
+    //         showToast(err?.response?.data?.detail || "Signature submit failed", "error");
+    //     } finally {
+    //         setSignatureSubmitting(false);
+    //     }
+    // };
 
     // ── render ───────────────────────────────────────────────────
+
+const handleSubmitWithSignature = async () => {
+  if (!detail || !pendingApprovePayload) return;
+  if (!sigCanvasRef.current || sigCanvasRef.current.isEmpty()) {
+    showToast("Please provide your signature.", "error");
+    return;
+  }
+  const dataUrl = sigCanvasRef.current.toDataURL("image/png");
+  const base64Part = dataUrl.split(",")[1] || "";
+  if (!base64Part) {
+    showToast("Could not capture signature. Try again.", "error");
+    return;
+  }
+  const binary = atob(base64Part);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  const signatureFile = new File(
+    [bytes],
+    `checker-signature-${detail.id}.png`,
+    { type: "image/png" },
+  );
+  const formData = new FormData();
+  formData.append(
+    "submissions",
+    JSON.stringify(pendingApprovePayload.submissions || []),
+  );
+  formData.append("checker_signature", signatureFile);
+  setSignatureSubmitting(true);
+  try {
+    await approveSafetyChecklist(detail.id, formData);
+    showToast("Verification approved successfully.", "success");
+    handleCloseSignatureModal();
+    backToDashboard();
+    fetchList();
+  } catch (err) {
+    showToast(
+      err?.response?.data?.detail || "Signature submit failed",
+      "error",
+    );
+  } finally {
+    setSignatureSubmitting(false);
+  }
+};
+
+
     return (
         <div className="min-h-screen bg-muted/40 p-4 sm:p-6 md:p-10">
             <div className="mx-auto max-w-4xl">
@@ -537,9 +524,7 @@ export default function CheckerDashboard() {
 
                                 <div className="space-y-4">
                                     {(detail.items || []).map((item, idx) => {
-                                        const sub = (item.submissions || []).find(
-                                            (s) => s && s.status === "pending_checker" && s.checker_id == null
-                                        );
+                                        const sub = (item.submissions || []).at(-1);
                                         if (!sub) return null;
                                         const val = inspectionAnswers[sub.id];
                                         return (
@@ -587,7 +572,8 @@ export default function CheckerDashboard() {
                                                             const file = e.target.files?.[0];
                                                             if (!file) return;
                                                             try {
-                                                                setReviewerMedia((prev) => ({ ...prev, [sub.id]: file }));
+                                                                const base64 = await fileToBase64(file);
+                                                                setReviewerMedia((prev) => ({ ...prev, [sub.id]: base64 }));
                                                             } catch {
                                                                 showToast("Failed to read image file", "error");
                                                             }
@@ -666,9 +652,8 @@ export default function CheckerDashboard() {
                                                                 const file = e.target.files?.[0];
                                                                 if (!file) return;
                                                                 try {
-                                                                    // const base64 = await fileToBase64(file);
-                                                                    // setReviewerMedia((prev) => ({ ...prev, [sub.id]: base64 }));
-                                                                    setReviewerMedia((prev) => ({ ...prev, [sub.id]: file }));
+                                                                    const base64 = await fileToBase64(file);
+                                                                    setReviewerMedia((prev) => ({ ...prev, [sub.id]: base64 }));
                                                                 } catch {
                                                                     showToast("Failed to read image file", "error");
                                                                 }
@@ -717,7 +702,7 @@ export default function CheckerDashboard() {
                         {view === "dashboard" && (
                             <section>
                                 {/* Header */}
-                                <div className="mb-6 flex flex-wrap items-center gap-3">
+                                <div className="mb-6 flex items-center gap-3">
                                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-orange-100">
                                         <ClipboardCheck className="h-5 w-5 text-orange-500" />
                                     </div>
@@ -868,7 +853,7 @@ export default function CheckerDashboard() {
                                     }}
                                 />
                             </div>
-                            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="mt-3 flex items-center justify-between">
                                 <button
                                     type="button"
                                     onClick={() => sigCanvasRef.current?.clear()}

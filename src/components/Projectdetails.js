@@ -246,7 +246,7 @@ const ProjectDetailsPage = () => {
   };
 
   const isInitializerRole = () =>
-    getActiveRoleFromStorage(projectId) === "initializer";
+    getActiveRoleFromStorage(projectId) === "intializer";
 
 
   useEffect(() => {
@@ -527,44 +527,87 @@ const ProjectDetailsPage = () => {
     }
   };
 
-  const ensureTowerChecklistForInitializer = async (towerId, phaseId) => {
-    if (!isInitializerRole()) return null;
-    if (!projectId || !towerId || !token || !phaseId) return null;
+  // const ensureTowerChecklistForInitializer = async (towerId, phaseId) => {
+  //   if (!isInitializerRole()) return null;
+  //   if (!projectId || !towerId || !token || !phaseId) return null;
 
-    const initRes = await axios.get(INIT_CONTEXT_API_URL, {
-      params: {
-        project_id: projectId,
-        building_id: towerId,
-        tower_id: towerId,
-        phase_id: phaseId || undefined,
-      },
-      headers: authHeaders,
-    });
+  //   const initRes = await axios.get(INIT_CONTEXT_API_URL, {
+  //     params: {
+  //       project_id: projectId,
+  //       building_id: towerId,
+  //       tower_id: towerId,
+  //       phase_id: phaseId || undefined,
+  //     },
+  //     headers: authHeaders,
+  //   });
 
-    const ctx = initRes?.data || {};
+  //   const ctx = initRes?.data || {};
 
-    await axios.post(
-      CREATE_LIVE_CHECKLIST_API_URL,
-      {
-        project_id: ctx.project_id || projectId,
-        purpose_id: ctx.purpose_id,
-        phase_id: ctx.phase_id,
-        stage_id: ctx.stage_id,
-        category: ctx.category,
-        building_id: ctx.building_id || towerId,
-        tower_id: ctx.tower_id || towerId,
-        question_target_type: ctx.question_target_type,
-        applicable_scope: ctx.applicable_scope,
-        level_id: ctx.level_id || null,
-        flat_id: ctx.flat_id || null,
-        room_id: ctx.room_id || null,
-        zone_id: ctx.zone_id || null,
-      },
-      { headers: authHeaders }
-    );
+  //   await axios.post(
+  //     CREATE_LIVE_CHECKLIST_API_URL,
+  //     {
+  //       project_id: ctx.project_id || projectId,
+  //       purpose_id: ctx.purpose_id,
+  //       phase_id: ctx.phase_id,
+  //       stage_id: ctx.stage_id,
+  //       category: ctx.category,
+  //       building_id: ctx.building_id || towerId,
+  //       tower_id: ctx.tower_id || towerId,
+  //       question_target_type: ctx.question_target_type,
+  //       applicable_scope: ctx.applicable_scope,
+  //       level_id: ctx.level_id || null,
+  //       flat_id: ctx.flat_id || null,
+  //       room_id: ctx.room_id || null,
+  //       zone_id: ctx.zone_id || null,
+  //     },
+  //     { headers: authHeaders }
+  //   );
 
-    return ctx;
-  };
+  //   return ctx;
+  // };
+
+const ensureTowerChecklistForInitializer = async (towerId, phaseId) => {
+  if (!isInitializerRole()) return null;
+  if (!projectId || !towerId || !token || !phaseId) return null;
+
+  const initRes = await axios.get(INIT_CONTEXT_API_URL, {
+    params: {
+      project_id: projectId,
+      building_id: towerId,
+      tower_id: towerId,
+      phase_id: phaseId || undefined,
+    },
+    headers: authHeaders,
+  });
+
+  const ctx = initRes?.data || {};
+
+  await axios.post(
+    CREATE_LIVE_CHECKLIST_API_URL,
+    {
+      project_id: ctx.project_id || projectId,
+      purpose_id: ctx.purpose_id,
+      phase_id: ctx.phase_id,
+      stage_id: ctx.stage_id,
+
+      // ❌ REMOVED CATEGORY
+
+      building_id: ctx.building_id || towerId,
+      tower_id: ctx.tower_id || towerId,
+
+      question_target_type: ctx.question_target_type,
+      applicable_scope: ctx.applicable_scope,
+
+      level_id: null,
+      flat_id: null,
+      room_id: null,
+      zone_id: null,
+    },
+    { headers: authHeaders }
+  );
+
+  return ctx;
+};
 
   const openChecklistModal = async (towerObj) => {
     if (!towerObj?.id) return;
@@ -630,45 +673,90 @@ const ProjectDetailsPage = () => {
     }
   };
 
-  const handleTowerPhaseChange = async (towerId, phaseId) => {
-    setSelectedPhaseByTower((prev) => ({
-      ...prev,
-      [towerId]: phaseId,
-    }));
+  // const handleTowerPhaseChange = async (towerId, phaseId) => {
+  //   setSelectedPhaseByTower((prev) => ({
+  //     ...prev,
+  //     [towerId]: phaseId,
+  //   }));
 
-    savePhaseForTower(projectId, towerId, phaseId);
+  //   savePhaseForTower(projectId, towerId, phaseId);
 
-    try {
-      if (isInitializerRole() && phaseId) {
-        console.log("INIT CONTEXT TRIGGERED FROM PHASE SELECT", {
-          projectId,
-          towerId,
-          phaseId,
-        });
+  //   try {
+  //     if (isInitializerRole() && phaseId) {
+  //       console.log("INIT CONTEXT TRIGGERED FROM PHASE SELECT", {
+  //         projectId,
+  //         towerId,
+  //         phaseId,
+  //       });
 
-        await ensureTowerChecklistForInitializer(towerId, phaseId);
-      }
+  //       await ensureTowerChecklistForInitializer(towerId, phaseId);
+  //     }
 
-      // const meta = await fetchMetaForTower(towerId, phaseId);
-      // setTowerChecklistMeta((prev) => ({
-      //   ...prev,
-      //   [towerId]: meta,
-      // }));
+  //     // const meta = await fetchMetaForTower(towerId, phaseId);
+  //     // setTowerChecklistMeta((prev) => ({
+  //     //   ...prev,
+  //     //   [towerId]: meta,
+  //     // }));
 
-      const cacheKey = getTowerPhaseCacheKey(towerId, phaseId);
-      setTowerChecklistDetails((prev) => {
-        const next = { ...prev };
-        delete next[cacheKey];
-        return next;
+  //     const cacheKey = getTowerPhaseCacheKey(towerId, phaseId);
+  //     setTowerChecklistDetails((prev) => {
+  //       const next = { ...prev };
+  //       delete next[cacheKey];
+  //       return next;
+  //     });
+  //   } catch (e) {
+  //     console.log("init context / phase change error", e);
+  //   }
+
+  //   if (isModalOpen && activeTower?.id === towerId) {
+  //     await openChecklistModal({ id: towerId, name: activeTower?.name });
+  //   }
+  // };
+const handleTowerPhaseChange = async (towerId, phaseId) => {
+  setSelectedPhaseByTower((prev) => ({
+    ...prev,
+    [towerId]: phaseId,
+  }));
+
+  savePhaseForTower(projectId, towerId, phaseId);
+
+  try {
+    if (isInitializerRole() && phaseId) {
+      console.log("INIT CONTEXT TRIGGERED FROM PHASE SELECT", {
+        projectId,
+        towerId,
+        phaseId,
       });
-    } catch (e) {
-      console.log("init context / phase change error", e);
+
+      // ✅ STEP 1: CREATE CHECKLISTS
+      await ensureTowerChecklistForInitializer(towerId, phaseId);
+
+      // ✅ STEP 2: FORCE REFRESH META (🔥 IMPORTANT FIX)
+      const meta = await fetchMetaForTower(towerId, phaseId);
+
+      setTowerChecklistMeta((prev) => ({
+        ...prev,
+        [towerId]: meta,
+      }));
     }
 
-    if (isModalOpen && activeTower?.id === towerId) {
-      await openChecklistModal({ id: towerId, name: activeTower?.name });
-    }
-  };
+    // ✅ STEP 3: CLEAR CACHE (already correct)
+    const cacheKey = getTowerPhaseCacheKey(towerId, phaseId);
+    setTowerChecklistDetails((prev) => {
+      const next = { ...prev };
+      delete next[cacheKey];
+      return next;
+    });
+
+  } catch (e) {
+    console.log("init context / phase change error", e);
+  }
+
+  // ✅ STEP 4: RELOAD MODAL IF OPEN (already correct)
+  if (isModalOpen && activeTower?.id === towerId) {
+    await openChecklistModal({ id: towerId, name: activeTower?.name });
+  }
+};
 
   const handleImageClick = (towerId) => {
     const phaseId =

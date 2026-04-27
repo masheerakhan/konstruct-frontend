@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import axiosInstance from "../api/axiosInstance";
 import { useTheme } from "../ThemeContext";
+import { toast } from "react-toastify";
 import axios from "axios";
 // import {
 //   getPurposeByProjectId,
@@ -64,8 +65,11 @@ function UsersManagement() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminProjects, setAdminProjects] = useState([]);
   const [adminProjectsLoading, setAdminProjectsLoading] = useState(false);
+  const [buildingsByProjectCache, setBuildingsByProjectCache] = useState({});
+  // const [selectedBuildingId, setSelectedBuildingId] = useState("");
+const [selectedBuildingIds, setSelectedBuildingIds] = useState([]);
 
-  const { theme } = useTheme();
+  const { theme } = useTheme(); 
 
   const palette =
     theme === "dark"
@@ -123,6 +127,7 @@ function UsersManagement() {
   const [accessActiveDraft, setAccessActiveDraft] = useState(true);
   const [accessSaving, setAccessSaving] = useState(false);
   const [accessErr, setAccessErr] = useState("");
+  const [deleteAccessLoadingId, setDeleteAccessLoadingId] = useState(null);
   const [userToggleSaving, setUserToggleSaving] = useState(false);
 
   const [projectNameCache, setProjectNameCache] = useState({});
@@ -425,6 +430,42 @@ function UsersManagement() {
     }
   };
 
+const fetchBuildingsByProject = async (projectId, force = false) => {
+  if (!projectId) return;
+
+  const key = String(projectId);
+
+  if (!force && buildingsByProjectCache[key]) return;
+
+  try {
+    const res = await axios.get(
+      `https://konstruct.world/projects/buildings/?project_id=${projectId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("ACCESS_TOKEN") || ""}`,
+        },
+      },
+    );
+
+    const list = Array.isArray(res.data)
+      ? res.data
+      : Array.isArray(res.data?.results)
+        ? res.data.results
+        : [];
+
+    setBuildingsByProjectCache((prev) => ({
+      ...prev,
+      [key]: list,
+    }));
+  } catch (err) {
+    console.error("Failed to fetch buildings", err);
+    setBuildingsByProjectCache((prev) => ({
+      ...prev,
+      [key]: prev[key] || [],
+    }));
+  }
+};
+
   const fetchPhasesByPurpose = async (purposeId, force = false) => {
     if (!purposeId) return;
 
@@ -565,6 +606,19 @@ function UsersManagement() {
     const scopeText = getScopeLabel(access);
     return `${projectName} — ${purposeText} — ${stageText} — ${scopeText}`;
   };
+
+  const buildingOptions = useMemo(() => {
+    if (!selectedProjectId) return [];
+
+    const list = buildingsByProjectCache[String(selectedProjectId)] || [];
+
+    return list
+      .map((b) => ({
+        id: b.id,
+        name: b.name || b.building_name || b.title || `Building ${b.id}`,
+      }))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }, [selectedProjectId, buildingsByProjectCache]);
 
   const purposeOptions = useMemo(() => {
     if (!selectedProjectId) return [];
@@ -772,20 +826,64 @@ function UsersManagement() {
     });
   };
 
-  const handleProjectChange = async (projectId) => {
-    setSelectedProjectId(projectId);
-    setSelectedAccessId(null);
-    setSelectedAccessIds([]);
-    setSelectedPurposeId("");
-    setSelectedPhaseId("");
-    setSelectedStageIds([]);
-    setSelectedCategoryIds([]);
-    setSelectedRole("");
+  // const handleProjectChange = async (projectId) => {
+  //   setSelectedProjectId(projectId);
+  //   setSelectedAccessId(null);
+  //   setSelectedAccessIds([]);
+  //   setSelectedPurposeId("");
+  //   setSelectedPhaseId("");
+  //   setSelectedStageIds([]);
+  //   setSelectedCategoryIds([]);
+  //   setSelectedRole("");
 
-    if (projectId) {
-      await fetchPurposePhaseStageByProject(projectId, true);
+  //   if (projectId) {
+  //     await fetchPurposePhaseStageByProject(projectId, true);
+  //   }
+  // };
+const handleProjectChange = async (projectId) => {
+  setSelectedProjectId(projectId);
+  setSelectedAccessId(null);
+  setSelectedAccessIds([]);
+  setSelectedBuildingIds([]);
+  setSelectedPurposeId("");
+  setSelectedPhaseId("");
+  setSelectedStageIds([]);
+  setSelectedCategoryIds([]);
+  setSelectedRole("");
+
+  if (projectId) {
+    await Promise.all([
+      fetchPurposePhaseStageByProject(projectId, true),
+      fetchBuildingsByProject(projectId, true),
+    ]);
+  }
+};
+
+const handleBuildingToggle = (buildingId) => {
+  setSelectedBuildingIds((prev) => {
+    const key = String(buildingId);
+    const exists = prev.includes(key);
+
+    if (exists) {
+      return prev.filter((id) => String(id) !== key);
     }
-  };
+    return [...prev, key];
+  });
+};
+
+const allBuildingsSelected =
+  buildingOptions.length > 0 &&
+  buildingOptions.every((item) =>
+    selectedBuildingIds.includes(String(item.id)),
+  );
+
+const toggleSelectAllBuildings = () => {
+  if (allBuildingsSelected) {
+    setSelectedBuildingIds([]);
+  } else {
+    setSelectedBuildingIds(buildingOptions.map((b) => String(b.id)));
+  }
+};
 
   const handlePurposeChange = async (purposeId) => {
     setSelectedPurposeId(String(purposeId || ""));
@@ -971,6 +1069,7 @@ function UsersManagement() {
     setSelectedAccessId(null);
     setSelectedAccessIds([]);
     setSelectedProjectId("");
+    setSelectedBuildingIds([]);
     setSelectedPurposeId("");
     setSelectedPhaseId("");
     setSelectedStageIds([]);
@@ -986,6 +1085,7 @@ function UsersManagement() {
     setSelectedAccessId(null);
     setSelectedAccessIds([]);
     setSelectedProjectId("");
+    setSelectedBuildingIds([]);
     setSelectedPurposeId("");
     setSelectedPhaseId("");
     setSelectedStageIds([]);
@@ -996,52 +1096,102 @@ function UsersManagement() {
     setAccessErr("");
   };
 
-  const populateFromAccess = async (access) => {
-    if (!access) return;
+  // const populateFromAccess = async (access) => {
+  //   if (!access) return;
 
-    const projectId = access.project_id ? String(access.project_id) : "";
-    const purposeId = access.purpose_id ? String(access.purpose_id) : "";
-    const phaseId = access.phase_id ? String(access.phase_id) : "";
-    const stageId = access.stage_id ? String(access.stage_id) : "";
+  //   const projectId = access.project_id ? String(access.project_id) : "";
+  //   const purposeId = access.purpose_id ? String(access.purpose_id) : "";
+  //   const phaseId = access.phase_id ? String(access.phase_id) : "";
+  //   const stageId = access.stage_id ? String(access.stage_id) : "";
 
-    setSelectedAccessId(String(access.id));
-    setSelectedAccessIds([String(access.id)]);
-    setSelectedProjectId(projectId);
+  //   setSelectedAccessId(String(access.id));
+  //   setSelectedAccessIds([String(access.id)]);
+  //   setSelectedProjectId(projectId);
 
-    if (projectId) {
-      await fetchPurposePhaseStageByProject(projectId, true);
-    }
+  //   if (projectId) {
+  //     await fetchPurposePhaseStageByProject(projectId, true);
+  //   }
 
-    if (purposeId) {
-      await fetchPhasesByPurpose(purposeId, true);
-    }
+  //   if (purposeId) {
+  //     await fetchPhasesByPurpose(purposeId, true);
+  //   }
 
-    setSelectedPurposeId(purposeId || "");
-    setSelectedPhaseId(phaseId || "");
-    setSelectedStageIds(stageId ? [stageId] : []);
+  //   setSelectedPurposeId(purposeId || "");
+  //   setSelectedPhaseId(phaseId || "");
+  //   setSelectedStageIds(stageId ? [stageId] : []);
 
-    if (access.all_cat === true) {
-      const projectCategories =
-        categories
-          .filter((c) => String(c.project) === String(projectId))
-          .map((c) => String(c.id)) || [];
-      setSelectedCategoryIds(projectCategories);
-    } else {
-      setSelectedCategoryIds(
-        access.category || access.category === 0
-          ? [String(access.category)]
-          : [],
-      );
-    }
+  //   if (access.all_cat === true) {
+  //     const projectCategories =
+  //       categories
+  //         .filter((c) => String(c.project) === String(projectId))
+  //         .map((c) => String(c.id)) || [];
+  //     setSelectedCategoryIds(projectCategories);
+  //   } else {
+  //     setSelectedCategoryIds(
+  //       access.category || access.category === 0
+  //         ? [String(access.category)]
+  //         : [],
+  //     );
+  //   }
 
-    const firstRole =
-      Array.from(
-        new Set((access.roles || []).map((r) => r?.role).filter(Boolean)),
-      )[0] || "";
-    setSelectedRole(firstRole);
-    setAccessActiveDraft(Boolean(access.active));
-    setAccessErr("");
-  };
+  //   const firstRole =
+  //     Array.from(
+  //       new Set((access.roles || []).map((r) => r?.role).filter(Boolean)),
+  //     )[0] || "";
+  //   setSelectedRole(firstRole);
+  //   setAccessActiveDraft(Boolean(access.active));
+  //   setAccessErr("");
+  // };
+const populateFromAccess = async (access) => {
+  if (!access) return;
+
+  const projectId = access.project_id ? String(access.project_id) : "";
+  const buildingId = access.building_id ? String(access.building_id) : "";
+  const purposeId = access.purpose_id ? String(access.purpose_id) : "";
+  const phaseId = access.phase_id ? String(access.phase_id) : "";
+  const stageId = access.stage_id ? String(access.stage_id) : "";
+
+  setSelectedAccessId(String(access.id));
+  setSelectedAccessIds([String(access.id)]);
+  setSelectedProjectId(projectId);
+
+  if (projectId) {
+    await Promise.all([
+      fetchPurposePhaseStageByProject(projectId, true),
+      fetchBuildingsByProject(projectId, true),
+    ]);
+  }
+
+  if (purposeId) {
+    await fetchPhasesByPurpose(purposeId, true);
+  }
+
+  setSelectedBuildingIds(buildingId ? [buildingId] : []);
+  setSelectedPurposeId(purposeId || "");
+  setSelectedPhaseId(phaseId || "");
+  setSelectedStageIds(stageId ? [stageId] : []);
+
+  if (access.all_cat === true) {
+    const projectCategories =
+      categories
+        .filter((c) => String(c.project) === String(projectId))
+        .map((c) => String(c.id)) || [];
+    setSelectedCategoryIds(projectCategories);
+  } else {
+    setSelectedCategoryIds(
+      access.category || access.category === 0 ? [String(access.category)] : [],
+    );
+  }
+
+  const firstRole =
+    Array.from(
+      new Set((access.roles || []).map((r) => r?.role).filter(Boolean)),
+    )[0] || "";
+
+  setSelectedRole(firstRole);
+  setAccessActiveDraft(Boolean(access.active));
+  setAccessErr("");
+};
 
   useEffect(() => {
     if (!selectedAccess) return;
@@ -1072,53 +1222,113 @@ function UsersManagement() {
         String(role || "").toUpperCase(),
     );
 
-  const buildAccessPayloads = ({
-    userId,
-    projectId,
-    buildingId,
-    levelId,
-    flatId,
-    selectedPurposeId = null,
-    selectedPhaseId = null,
-    selectedStages = [],
-    selectedCategories = [],
-    selectedRole = "",
-    allCategoriesSelected = false,
-  }) => {
-    const payloads = [];
+  // const buildAccessPayloads = ({
+  //   userId,
+  //   projectId,
+  //   buildingId,
+  //   levelId,
+  //   flatId,
+  //   selectedPurposeId = null,
+  //   selectedPhaseId = null,
+  //   selectedStages = [],
+  //   selectedCategories = [],
+  //   selectedRole = "",
+  //   allCategoriesSelected = false,
+  // }) => {
+  //   const payloads = [];
 
-    const stagesLocal = selectedStages.length ? selectedStages : [null];
-    const categoriesLocal =
-      allCategoriesSelected || !selectedCategories.length
-        ? [null]
-        : selectedCategories;
+  //   const stagesLocal = selectedStages.length ? selectedStages : [null];
+  //   const categoriesLocal =
+  //     allCategoriesSelected || !selectedCategories.length
+  //       ? [null]
+  //       : selectedCategories;
 
-    if (!selectedRole) return payloads;
+  //   if (!selectedRole) return payloads;
 
-    for (const stage of stagesLocal) {
-      for (const category of categoriesLocal) {
+  //   for (const stage of stagesLocal) {
+  //     for (const category of categoriesLocal) {
+  //       payloads.push({
+  //         user_id: userId,
+  //         role: selectedRole,
+  //         project_id: projectId,
+  //         building_id: buildingId || null,
+  //         level_id: levelId || null,
+  //         flat_id: flatId || null,
+  //         purpose_id: selectedPurposeId ? Number(selectedPurposeId) : null,
+  //         phase_id: selectedPhaseId ? Number(selectedPhaseId) : null,
+  //         stage_id: stage?.id ? Number(stage.id) : null,
+  //         category: allCategoriesSelected
+  //           ? null
+  //           : category?.id
+  //             ? Number(category.id)
+  //             : null,
+  //         all_cat: allCategoriesSelected,
+  //       });
+  //     }
+  //   }
+
+  //   return payloads;
+  // };
+const buildAccessPayloads = ({
+  userId,
+  projectId,
+  buildingIds = [],
+  levelId,
+  flatId,
+  role,
+  selectedPurposeId = null,
+  selectedPhaseId = null,
+  selectedStageObjects = [],
+  selectedCategoryObjects = [],
+  isAllCategoriesSelectedNow = false,
+  accessActiveDraft = true,
+}) => {
+  const buildingValues = buildingIds.length
+    ? buildingIds.map((id) => Number(id))
+    : [null];
+
+  const stageValues = selectedStageObjects.length
+    ? selectedStageObjects
+    : [{ id: null }];
+
+  const categoryValues = isAllCategoriesSelectedNow
+    ? [{ id: null, all_cat: true }]
+    : selectedCategoryObjects.length
+      ? selectedCategoryObjects.map((c) => ({ id: c.id, all_cat: false }))
+      : [{ id: null, all_cat: false }];
+
+  const payloads = [];
+
+  buildingValues.forEach((buildingId) => {
+    stageValues.forEach((stage) => {
+      categoryValues.forEach((category) => {
         payloads.push({
-          user_id: userId,
-          role: selectedRole,
-          project_id: projectId,
-          building_id: buildingId || null,
-          level_id: levelId || null,
-          flat_id: flatId || null,
+          user: userId,
+          role: role,
+          // project_id: Number(projectId),
+          project_id: projectId ? Number(projectId) : null,
+          building_id: buildingId,
+          level_id: levelId ? Number(levelId) : null,
+          flat_id: flatId ? Number(flatId) : null,
           purpose_id: selectedPurposeId ? Number(selectedPurposeId) : null,
           phase_id: selectedPhaseId ? Number(selectedPhaseId) : null,
           stage_id: stage?.id ? Number(stage.id) : null,
-          category: allCategoriesSelected
-            ? null
-            : category?.id
-              ? Number(category.id)
-              : null,
-          all_cat: allCategoriesSelected,
+          active: Boolean(accessActiveDraft),
+          all_cat: Boolean(category.all_cat),
+          category: category.id ? Number(category.id) : null,
+          CategoryLevel1: null,
+          CategoryLevel2: null,
+          CategoryLevel3: null,
+          CategoryLevel4: null,
+          CategoryLevel5: null,
+          CategoryLevel6: null,
         });
-      }
-    }
+      });
+    });
+  });
 
-    return payloads;
-  };
+  return payloads;
+};
 
   const getCurrentScopeDefaults = () => {
     if (!selectedAccess) {
@@ -1138,8 +1348,15 @@ function UsersManagement() {
     };
   };
 
-  const canSaveAccess = Boolean(selectedProjectId && selectedRole);
+  // const canSaveAccess = Boolean(selectedProjectId && selectedRole);
 
+  const isProjectOptional = ["PROJECT_HEAD", "PROJECT_MANAGER"].includes(
+    selectedRole?.toUpperCase(),
+  );
+
+  const canSaveAccess = Boolean(
+    selectedRole && (selectedProjectId || isProjectOptional),
+  );
   // const saveAccessAndRoles = async () => {
   //   if (!accessUser?.id) return;
 
@@ -1335,8 +1552,16 @@ function UsersManagement() {
   const saveAccessAndRoles = async () => {
     if (!accessUser?.id) return;
 
-    if (!selectedProjectId) {
-      setAccessErr("Select project first.");
+    // if (!selectedProjectId) {
+    //   setAccessErr("Select project first.");
+    //   return;
+    // }
+    const isProjectOptional = ["PROJECT_HEAD", "PROJECT_MANAGER"].includes(
+      selectedRole?.toUpperCase(),
+    );
+
+    if (!selectedProjectId && !isProjectOptional) {
+      toast.error("Please select project");
       return;
     }
 
@@ -1364,18 +1589,36 @@ function UsersManagement() {
         categoryOptions,
       );
 
+      // const payloads = buildAccessPayloads({
+      //   userId: accessUser.id,
+      //   projectId: Number(selectedProjectId),
+      //   // buildingId: scopeDefaults.building_id,
+      //   buildingId: selectedBuildingId ? Number(selectedBuildingId) : null,
+      //   levelId: scopeDefaults.level_id,
+      //   flatId: scopeDefaults.flat_id,
+      //   selectedPurposeId: selectedPurposeId || null,
+      //   selectedPhaseId: selectedPhaseId || null,
+      //   selectedStages: selectedStageObjects,
+      //   selectedCategories: selectedCategoryObjects,
+      //   selectedRole,
+      //   allCategoriesSelected: isAllCategoriesSelectedNow,
+      // });
       const payloads = buildAccessPayloads({
         userId: accessUser.id,
-        projectId: Number(selectedProjectId),
-        buildingId: scopeDefaults.building_id,
-        levelId: scopeDefaults.level_id,
-        flatId: scopeDefaults.flat_id,
-        selectedPurposeId: selectedPurposeId || null,
-        selectedPhaseId: selectedPhaseId || null,
-        selectedStages: selectedStageObjects,
-        selectedCategories: selectedCategoryObjects,
-        selectedRole,
-        allCategoriesSelected: isAllCategoriesSelectedNow,
+        role: selectedRole,
+        // projectId: selectedProjectId,
+        projectId: isProjectOptional
+          ? selectedProjectId || null
+          : selectedProjectId,
+        buildingIds: selectedBuildingIds,
+        levelId: scopeDefaults.level_id || null,
+        flatId: scopeDefaults.flat_id || null,
+        selectedPurposeId,
+        selectedPhaseId,
+        selectedStageObjects,
+        selectedCategoryObjects,
+        isAllCategoriesSelectedNow,
+        accessActiveDraft,
       });
 
       if (payloads.length === 0) {
@@ -1411,6 +1654,7 @@ function UsersManagement() {
           stage_id: item.stage_id,
           category: item.category,
           all_cat: item.all_cat,
+          role: item.role,
         };
 
         const sameScopeAccesses = existingAccesses.filter((a) =>
@@ -1528,6 +1772,53 @@ function UsersManagement() {
       setAccessErr(msg);
     } finally {
       setAccessSaving(false);
+    }
+  };
+
+  const handleDeleteAccess = async (accessId) => {
+    if (!accessUser?.id || !accessId) return;
+
+    const ok = window.confirm(
+      "Are you sure you want to delete this access? This will also delete its roles.",
+    );
+    if (!ok) return;
+
+    setAccessErr("");
+    setDeleteAccessLoadingId(String(accessId));
+
+    try {
+      await axiosInstance.delete(`/accesses/${accessId}/`);
+
+      const latestUsers = await fetchUsers();
+      const refreshed = latestUsers.find((u) => u.id === accessUser.id);
+
+      if (refreshed) {
+        setAccessUser(refreshed);
+      }
+
+      if (String(selectedAccessId || "") === String(accessId)) {
+        setSelectedAccessId(null);
+        setSelectedAccessIds([]);
+        setSelectedProjectId("");
+        setSelectedPurposeId("");
+        setSelectedPhaseId("");
+        setSelectedStageIds([]);
+        setSelectedCategoryIds([]);
+        setSelectedRole("");
+        setAccessActiveDraft(true);
+      }
+
+      window.alert("Access deleted successfully.");
+    } catch (e) {
+      const msg =
+        e?.response?.data?.detail ||
+        (typeof e?.response?.data === "object"
+          ? JSON.stringify(e.response.data)
+          : "") ||
+        "Failed to delete access.";
+      setAccessErr(msg);
+    } finally {
+      setDeleteAccessLoadingId(null);
     }
   };
 
@@ -2250,6 +2541,47 @@ function UsersManagement() {
                       </div>
                     </div>
 
+                    {/* <div className="mt-5">
+                      <label
+                        className={`block text-sm font-medium mb-1 ${palette.text}`}
+                      >
+                        Building
+                      </label>
+                      <select
+                        value={selectedBuildingId}
+                        onChange={(e) => setSelectedBuildingId(e.target.value)}
+                        disabled={!selectedProjectId}
+                        className={`w-full rounded-lg border px-3 py-2 ${palette.input}`}
+                      >
+                        <option value="">Select Building</option>
+                        {buildingOptions.map((building) => (
+                          <option key={building.id} value={building.id}>
+                            {building.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div> */}
+                    <div className="mt-5">
+                      <label
+                        className={`block text-sm font-medium mb-1 ${palette.text}`}
+                      >
+                        Building
+                      </label>
+                      <select
+                        value={selectedBuildingIds[0]}
+                        onChange={(e) => setSelectedBuildingIds([e.target.value])}
+                        disabled={!selectedProjectId}
+                        className={`w-full rounded-lg border px-3 py-2 ${palette.input}`}
+                      >
+                        <option value="">Select Building</option>
+                        {buildingOptions.map((building) => (
+                          <option key={building.id} value={building.id}>
+                            {building.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     {selectedProjectId && (
                       <>
                         <div className="mt-5">
@@ -2516,71 +2848,156 @@ function UsersManagement() {
                             String(selectedAccessId || "") ===
                             String(access.id);
 
+                          // return (
+                          // <button
+                          //   key={access.id}
+                          //   type="button"
+                          //   onClick={() => populateFromAccess(access)}
+                          //   className={`w-full text-left rounded-xl border p-3 transition ${
+                          //     isSelected
+                          //       ? theme === "dark"
+                          //         ? "border-blue-500 bg-slate-800"
+                          //         : "border-blue-500 bg-blue-50"
+                          //       : theme === "dark"
+                          //         ? "border-slate-700 bg-slate-800 hover:bg-slate-700"
+                          //         : "border-gray-200 bg-white hover:bg-gray-50"
+                          //   }`}
+                          // >
+                          //   <div className="flex items-start justify-between gap-3">
+                          //     <div>
+                          //       <div
+                          //         className={`font-semibold ${palette.text}`}
+                          //       >
+                          //         {access.project_name ||
+                          //           getProjectNameById(access.project_id)}
+                          //       </div>
+                          //       <div
+                          //         className={`text-xs mt-1 ${palette.subtext}`}
+                          //       >
+                          //         Purpose: {getPurposeLabel(access)}
+                          //       </div>
+                          //       <div
+                          //         className={`text-xs mt-1 ${palette.subtext}`}
+                          //       >
+                          //         {fmtStage(access)}
+                          //       </div>
+                          //       <div
+                          //         className={`text-xs mt-1 ${palette.subtext}`}
+                          //       >
+                          //         Scope: {getScopeLabel(access)}
+                          //       </div>
+                          //       <div
+                          //         className={`text-xs mt-1 ${palette.subtext}`}
+                          //       >
+                          //         Active: {access.active ? "Yes" : "No"}
+                          //       </div>
+                          //     </div>
+
+                          //     <div className="flex flex-wrap gap-1 justify-end max-w-[45%]">
+                          //       {(access.roles || []).length > 0 ? (
+                          //         access.roles.map((roleObj, idx) => (
+                          //           <span
+                          //             key={`${access.id}-${roleObj?.role || idx}`}
+                          //             className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${getRoleColor(
+                          //               roleObj?.role,
+                          //             )}`}
+                          //           >
+                          //             {roleObj?.role}
+                          //           </span>
+                          //         ))
+                          //       ) : (
+                          //         <span className="text-xs text-gray-500">
+                          //           No roles
+                          //         </span>
+                          //       )}
+                          //     </div>
+                          //   </div>
+                          // </button>
                           return (
-                            <button
+                            <div
                               key={access.id}
-                              type="button"
-                              onClick={() => populateFromAccess(access)}
-                              className={`w-full text-left rounded-xl border p-3 transition ${
+                              className={`rounded-xl border p-3 transition ${
                                 isSelected
                                   ? theme === "dark"
                                     ? "border-blue-500 bg-slate-800"
                                     : "border-blue-500 bg-blue-50"
                                   : theme === "dark"
-                                    ? "border-slate-700 bg-slate-800 hover:bg-slate-700"
-                                    : "border-gray-200 bg-white hover:bg-gray-50"
+                                    ? "border-slate-700 bg-slate-800"
+                                    : "border-gray-200 bg-white"
                               }`}
                             >
                               <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <div
-                                    className={`font-semibold ${palette.text}`}
-                                  >
-                                    {access.project_name ||
-                                      getProjectNameById(access.project_id)}
+                                <button
+                                  type="button"
+                                  onClick={() => populateFromAccess(access)}
+                                  className="flex-1 text-left"
+                                >
+                                  <div>
+                                    <div
+                                      className={`font-semibold ${palette.text}`}
+                                    >
+                                      {access.project_name ||
+                                        getProjectNameById(access.project_id)}
+                                    </div>
+                                    <div
+                                      className={`text-xs mt-1 ${palette.subtext}`}
+                                    >
+                                      Purpose: {getPurposeLabel(access)}
+                                    </div>
+                                    <div
+                                      className={`text-xs mt-1 ${palette.subtext}`}
+                                    >
+                                      {fmtStage(access)}
+                                    </div>
+                                    <div
+                                      className={`text-xs mt-1 ${palette.subtext}`}
+                                    >
+                                      Scope: {getScopeLabel(access)}
+                                    </div>
+                                    <div
+                                      className={`text-xs mt-1 ${palette.subtext}`}
+                                    >
+                                      Active: {access.active ? "Yes" : "No"}
+                                    </div>
                                   </div>
-                                  <div
-                                    className={`text-xs mt-1 ${palette.subtext}`}
-                                  >
-                                    Purpose: {getPurposeLabel(access)}
-                                  </div>
-                                  <div
-                                    className={`text-xs mt-1 ${palette.subtext}`}
-                                  >
-                                    {fmtStage(access)}
-                                  </div>
-                                  <div
-                                    className={`text-xs mt-1 ${palette.subtext}`}
-                                  >
-                                    Scope: {getScopeLabel(access)}
-                                  </div>
-                                  <div
-                                    className={`text-xs mt-1 ${palette.subtext}`}
-                                  >
-                                    Active: {access.active ? "Yes" : "No"}
-                                  </div>
-                                </div>
+                                </button>
 
-                                <div className="flex flex-wrap gap-1 justify-end max-w-[45%]">
-                                  {(access.roles || []).length > 0 ? (
-                                    access.roles.map((roleObj, idx) => (
-                                      <span
-                                        key={`${access.id}-${roleObj?.role || idx}`}
-                                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${getRoleColor(
-                                          roleObj?.role,
-                                        )}`}
-                                      >
-                                        {roleObj?.role}
+                                <div className="flex flex-col items-end gap-2 max-w-[45%]">
+                                  <div className="flex flex-wrap gap-1 justify-end">
+                                    {(access.roles || []).length > 0 ? (
+                                      access.roles.map((roleObj, idx) => (
+                                        <span
+                                          key={`${access.id}-${roleObj?.role || idx}`}
+                                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${getRoleColor(roleObj?.role)}`}
+                                        >
+                                          {roleObj?.role}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-xs text-gray-500">
+                                        No roles
                                       </span>
-                                    ))
-                                  ) : (
-                                    <span className="text-xs text-gray-500">
-                                      No roles
-                                    </span>
-                                  )}
+                                    )}
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleDeleteAccess(access.id)
+                                    }
+                                    disabled={
+                                      deleteAccessLoadingId ===
+                                      String(access.id)
+                                    }
+                                    className="px-3 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs disabled:opacity-50"
+                                  >
+                                    {deleteAccessLoadingId === String(access.id)
+                                      ? "Deleting..."
+                                      : "Delete Access"}
+                                  </button>
                                 </div>
                               </div>
-                            </button>
+                            </div>
                           );
                         })}
                       </div>

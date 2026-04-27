@@ -268,6 +268,13 @@ export const getOrganizationDetailsById = async (id) =>
     },
   });
 
+export const getOrganization = async () =>
+  organnizationInstance.get(`/organization-list/`, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
 
 export const getCompanyDetailsById = async (id) =>
   organnizationInstance.get(
@@ -722,89 +729,54 @@ export const updateChecklist = async (data) =>
 // ################################ SAFETY API USAGE ########################################
 
 // ---- Safety Setup (categories + templates) ----
-export const listSafetyCategories = (params = {}) =>
-  NEWchecklistInstance.get("/safety/categories/", {
-    params: {
-      org_id: params.org_id,
-      project_id: params.project_id,
-      active: params.active,
-    },
-    headers: { "Content-Type": "application/json" },
-  });
+// export const listSafetyCategories = (params = {}) =>
+//   NEWchecklistInstance.get("/safety/categories/", {
+//     params: {
+//       org_id: params.org_id,
+//       project_id: params.project_id,
+//       active: params.active,
+//     },
+//     headers: { "Content-Type": "application/json" },
+//   });
 
-export const createSafetyCategory = (payload) =>
-  NEWchecklistInstance.post("/safety/categories/", payload, {
-    headers: { "Content-Type": "application/json" },
-  });
+// export const createSafetyCategory = (payload) =>
+//   NEWchecklistInstance.post("/safety/categories/", payload, {
+//     headers: { "Content-Type": "application/json" },
+//   });
 
-export const listSafetyTemplates = (params = {}) =>
-  NEWchecklistInstance.get("/safety/templates/", {
-    params: {
-      org_id: params.org_id,
-      project_id: params.project_id,
-      category: params.category,
-      status: params.status,
-      is_latest: params.is_latest,
-    },
-    headers: { "Content-Type": "application/json" },
-  });
+// export const listSafetyTemplates = (params = {}) =>
+//   NEWchecklistInstance.get("/safety/templates/", {
+//     params: {
+//       org_id: params.org_id,
+//       project_id: params.project_id,
+//       category: params.category,
+//       status: params.status,
+//       is_latest: params.is_latest,
+//     },
+//     headers: { "Content-Type": "application/json" },
+//   });
 
-export const getSafetyTemplate = (id) =>
-  NEWchecklistInstance.get(`/safety/templates/${id}/`, {
-    headers: { "Content-Type": "application/json" },
-  });
+// export const getSafetyTemplate = (id) =>
+//   NEWchecklistInstance.get(`/safety/templates/${id}/`, {
+//     headers: { "Content-Type": "application/json" },
+//   });
 
-export const createSafetyTemplate = (payload) =>
-  NEWchecklistInstance.post("/safety/templates/", payload, {
-    headers: { "Content-Type": "application/json" },
-  });
+// export const createSafetyTemplate = (payload) =>
+//   NEWchecklistInstance.post("/safety/templates/", payload, {
+//     headers: { "Content-Type": "application/json" },
+//   });
 
-export const deleteSafetyTemplate = (id) =>
-  NEWchecklistInstance.delete(`/safety/templates/${id}/`, {
-    headers: { "Content-Type": "application/json" },
-  });
+// export const deleteSafetyTemplate = (id) =>
+//   NEWchecklistInstance.delete(`/safety/templates/${id}/`, {
+//     headers: { "Content-Type": "application/json" },
+//   });
 
 // ---- Safety Checklist Instances (Manager creates from template) ----
-export const listSafetyChecklists = (params = {}) =>
-  NEWchecklistInstance.get("/safety/checklists/", {
-    params: {
-      project_id: params.project_id,
-      org_id: params.org_id,
-      assigned_to_me: params.assigned_to_me,
-    },
-    headers: { "Content-Type": "application/json" },
-  });
 
-export const getSafetyChecklist = (id) =>
-  NEWchecklistInstance.get(`/safety/checklists/${id}/`, {
-    headers: { "Content-Type": "application/json" },
-  });
-
-export const createSafetyChecklist = (payload) =>
-  NEWchecklistInstance.post("/safety/checklists/", payload, {
-    headers: { "Content-Type": "application/json" },
-  });
-
-export const submitSafetyChecklist = (id, payload = {}) =>
-  NEWchecklistInstance.post(`/safety/checklists/${id}/submit/`, payload, {
-    headers: { "Content-Type": "application/json" },
-  });
-
-export const approveSafetyChecklist = (id) =>
-  NEWchecklistInstance.post(`/safety/checklists/${id}/approve/`, {}, {
-    headers: { "Content-Type": "application/json" },
-  });
-
-export const rejectSafetyChecklist = (id, payload) =>
-  NEWchecklistInstance.post(`/safety/checklists/${id}/reject/`, payload, {
-    headers: { "Content-Type": "application/json" },
-  });
-
-export const downloadSafetyReport = (id) =>
-  NEWchecklistInstance.get(`/safety/checklists/${id}/report/`, {
-    responseType: "blob",
-  });
-
+// export const createSafetyChecklist = (payload) =>
+//   NEWchecklistInstance.post("/safety/checklists/", payload, {
+//     headers: { "Content-Type": "application/json" },
+//   });
 
 export const getUsersByOrganizationId = async (id) =>
   organnizationInstance.get(`/user-orgnizationn-info/${id}`, {
@@ -1386,7 +1358,16 @@ export const resolveActiveProjectId = () => {
 };
 
 
-
+export const resolveOrgId = () => {
+  try {
+   const raw = localStorage.getItem("USER_DATA");
+   if (!raw || raw === "undefined") return null;
+   const data = JSON.parse(raw);
+   return data?.org ?? data?.organization_id ?? data?.org_id ?? null;
+  } catch {
+   return null;
+  }
+};
 
 
 
@@ -2819,18 +2800,224 @@ export const startFormFromBasket = (basketId, payload) =>
     data: payload,
   });
 
-export const startSafetyChecklist = (id) =>
-  NEWchecklistInstance.post(`/safety/checklists/${id}/initialize/`, {}, {
-   headers: { "Content-Type": "application/json" },
+
+
+// ---- Safety Checklist Instances (Manager creates from template) ----
+// export const listSafetyChecklists = (params = {}) =>
+//   NEWchecklistInstance.get("/safety/checklists/", {
+//    params: {
+//      project_id: params.project_id,
+//      org_id: params.org_id ?? resolveOrgId(),
+//      assigned_to_me: params.assigned_to_me,
+//      status: params.status,
+//    },
+//    headers: { "Content-Type": "application/json" },
+//   });
+
+// Start/initialize a safety checklist (status not_started → in_progress)
+// export const startSafetyChecklist = (id, params = {}) =>
+//   NEWchecklistInstance.post(`/safety/checklists/${id}/initialize/`, {}, {
+//    params: {
+//      org_id: params.org_id ?? resolveOrgId(),
+//    },
+//    headers: { "Content-Type": "application/json" },
+//   });
+
+// export const getSafetyChecklist = (id, params = {}) =>
+//   NEWchecklistInstance.get(`/safety/checklists/${id}/`, {
+//    params: {
+//      org_id: params.org_id ?? resolveOrgId(),
+//    },
+//    headers: { "Content-Type": "application/json" },
+//   });
+
+// export const submitSafetyChecklist = (id, payload = {}) =>
+//   NEWchecklistInstance.post(`/safety/checklists/${id}/submit/`, payload, {
+//    params: {
+//      org_id: resolveOrgId(),
+//    },
+//    headers:
+//      payload instanceof FormData
+//        ? { "Content-Type": "multipart/form-data" }
+//        : { "Content-Type": "application/json" },
+//   });
+
+// export const approveSafetyChecklist = (id, payload = {}) =>
+//   NEWchecklistInstance.post(`/safety/checklists/${id}/approve/`, payload, {
+//    params: {
+//      org_id: resolveOrgId(),
+//    },
+//    headers:
+//      payload instanceof FormData
+//        ? { "Content-Type": "multipart/form-data" }
+//        : { "Content-Type": "application/json" },
+//   });
+
+// export const rejectSafetyChecklist = (id, payload) =>
+//   NEWchecklistInstance.post(`/safety/checklists/${id}/reject/`, payload, {
+//    params: {
+//      org_id: resolveOrgId(),
+//    },
+//    headers: { "Content-Type": "application/json" },
+//   });
+
+// export const downloadSafetyReport = (id, params = {}) =>
+//   NEWchecklistInstance.get(`/safety/checklists/${id}/report/`, {
+//    params: {
+//      org_id: params.org_id ?? resolveOrgId(),
+//    },
+//    responseType: "blob",
+//   });
+// ################################ SAFETY API USAGE ########################################
+
+// ---- Safety Setup (categories + templates) ----
+export const listSafetyCategories = (params = {}) =>
+  NEWchecklistInstance.get("/safety/categories/", {
+    params: {
+      org_id: params.org_id,
+      project_id: params.project_id,
+      active: params.active,
+    },
+    headers: { "Content-Type": "application/json" },
   });
 
-  export const resolveOrgId = () => {
-  try {
-   const raw = localStorage.getItem("USER_DATA");
-   if (!raw || raw === "undefined") return null;
-   const data = JSON.parse(raw);
-   return data?.org ?? data?.organization_id ?? data?.org_id ?? null;
-  } catch {
-   return null;
-  }
-};
+export const createSafetyCategory = (payload) =>
+  NEWchecklistInstance.post("/safety/categories/", payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const listSafetyTemplates = (params = {}) =>
+  NEWchecklistInstance.get("/safety/templates/", {
+    params: {
+      org_id: params.org_id,
+      project_id: params.project_id,
+      category: params.category,
+      status: params.status,
+      is_latest: params.is_latest,
+    },
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const getSafetyTemplate = (id) =>
+  NEWchecklistInstance.get(`/safety/templates/${id}/`, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const createSafetyTemplate = (payload) =>
+  NEWchecklistInstance.post("/safety/templates/", payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const deleteSafetyTemplate = (id) =>
+  NEWchecklistInstance.delete(`/safety/templates/${id}/`, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// ---- Safety Checklist Instances (Manager creates from template) ----
+export const listSafetyChecklists = (params = {}) =>
+  NEWchecklistInstance.get("/safety/checklists/", {
+    params: {
+      project_id: params.project_id,
+      org_id: params.org_id ?? resolveOrgId(),
+      assigned_to_me: params.assigned_to_me,
+      status: params.status,
+    },
+    headers: { "Content-Type": "application/json" },
+  });
+
+// Start/initialize a safety checklist (status not_started → in_progress)
+export const startSafetyChecklist = (id, params = {}) =>
+  NEWchecklistInstance.post(`/safety/checklists/${id}/initialize/`, {}, {
+    params: {
+      org_id: params.org_id ?? resolveOrgId(),
+    },
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const getSafetyChecklist = (id, params = {}) =>
+  NEWchecklistInstance.get(`/safety/checklists/${id}/`, {
+    params: {
+      org_id: params.org_id ?? resolveOrgId(),
+    },
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const createSafetyChecklist = (payload) =>
+  NEWchecklistInstance.post("/safety/checklists/", payload, {
+    headers: { "Content-Type": "application/json" },
+  });
+
+// export const submitSafetyChecklist = (id, payload = {}) =>
+//   NEWchecklistInstance.post(`/safety/checklists/${id}/submit/`, payload, {
+//     params: {
+//       org_id: resolveOrgId(),
+//     },
+//     headers:
+//       payload instanceof FormData
+//         ? { "Content-Type": "multipart/form-data" }
+//         : { "Content-Type": "application/json" },
+//   });
+
+// export const approveSafetyChecklist = (id, payload = {}) =>
+//   NEWchecklistInstance.post(`/safety/checklists/${id}/approve/`, payload, {
+//     params: {
+//       org_id: resolveOrgId(),
+//     },
+//     headers:
+//       payload instanceof FormData
+//         ? { "Content-Type": "multipart/form-data" }
+//         : { "Content-Type": "application/json" },
+//   });
+
+// export const rejectSafetyChecklist = (id, payload) =>
+//   NEWchecklistInstance.post(`/safety/checklists/${id}/reject/`, payload, {
+//     params: {
+//       org_id: resolveOrgId(),
+//     },
+//     headers: payload instanceof FormData
+//       ? { "Content-Type": "multipart/form-data" }
+//       : { "Content-Type": "application/json" },
+//   });
+
+
+export const submitSafetyChecklist = (id, payload = {}) =>
+  NEWchecklistInstance.post(`/safety/checklists/${id}/submit/`, payload, {
+    params: {
+      org_id: resolveOrgId(),
+    },
+    headers:
+      payload instanceof FormData
+        ? undefined
+        : { "Content-Type": "application/json" },
+  });
+
+export const approveSafetyChecklist = (id, payload = {}) =>
+  NEWchecklistInstance.post(`/safety/checklists/${id}/approve/`, payload, {
+    params: {
+      org_id: resolveOrgId(),
+    },
+    headers:
+      payload instanceof FormData
+        ? undefined
+        : { "Content-Type": "application/json" },
+  });
+
+export const rejectSafetyChecklist = (id, payload = {}) =>
+  NEWchecklistInstance.post(`/safety/checklists/${id}/reject/`, payload, {
+    params: {
+      org_id: resolveOrgId(),
+    },
+    headers:
+      payload instanceof FormData
+        ? undefined
+        : { "Content-Type": "application/json" },
+  });
+
+
+export const downloadSafetyReport = (id, params = {}) =>
+  NEWchecklistInstance.get(`/safety/checklists/${id}/report/`, {
+    params: {
+      org_id: params.org_id ?? resolveOrgId(),
+    },
+    responseType: "blob",
+  });

@@ -706,6 +706,15 @@ const FlatInspectionPage = () => {
     }));
   };
 
+  const normalizeChecklist = (checklist) => ({
+  ...checklist,
+  items:
+    checklist.items ||
+    checklist.questions ||
+    checklist.checklist_items ||
+    [],
+});
+
   const groupChecklistsByRoom = (rows = []) => {
     const grouped = new Map();
 
@@ -720,34 +729,35 @@ const FlatInspectionPage = () => {
         });
       }
 
-      grouped.get(roomKey).checklists.push(row);
+      // grouped.get(roomKey).checklists.push(row);
+      grouped.get(roomKey).checklists.push(normalizeChecklist(row));
     });
 
     return Array.from(grouped.values());
   };
 
-  const groupWorkChecklistsByRoom = (rows = []) => {
-    const grouped = new Map();
+  // const groupWorkChecklistsByRoom = (rows = []) => {
+  //   const grouped = new Map();
 
-    normalizeChecklistRows(rows).forEach((row) => {
-      const roomKey = row?.room_id ?? `no_room_${row?.id ?? grouped.size}`;
+  //   normalizeChecklistRows(rows).forEach((row) => {
+  //     const roomKey = row?.room_id ?? `no_room_${row?.id ?? grouped.size}`;
 
-      if (!grouped.has(roomKey)) {
-        grouped.set(roomKey, {
-          room_id: row?.room_id ?? null,
-          room_name: row?.room_name || row?.name_of_room || null,
-          room_details: row?.room_details || null,
-          available_for_me: [],
-          assigned_to_me: [],
-        });
-      }
+  //     if (!grouped.has(roomKey)) {
+  //       grouped.set(roomKey, {
+  //         room_id: row?.room_id ?? null,
+  //         room_name: row?.room_name || row?.name_of_room || null,
+  //         room_details: row?.room_details || null,
+  //         available_for_me: [],
+  //         assigned_to_me: [],
+  //       });
+  //     }
 
-      // for transfer-getchchklist direct checklist rows
-      grouped.get(roomKey).available_for_me.push(row);
-    });
+  //     // for transfer-getchchklist direct checklist rows
+  //     grouped.get(roomKey).available_for_me.push(row);
+  //   });
 
-    return Array.from(grouped.values());
-  };
+  //   return Array.from(grouped.values());
+  // };
 
   const hasChecklistItems = (rows = []) =>
     normalizeChecklistRows(rows).some(
@@ -840,16 +850,28 @@ const FlatInspectionPage = () => {
 
     let normalizedForView = [];
 
-    if (isInitializer) {
-      normalizedForView = groupChecklistsByRoom(rows);
-    } else if (isGroupedRoomPayload(rows)) {
-      // transfer-getchchklist already grouped by room → use as-is
-      normalizedForView = rows;
-    } else {
-      // fallback only for flat checklist rows
-      normalizedForView = groupWorkChecklistsByRoom(rows);
-    }
-
+  // if (isInitializer) {
+  //   normalizedForView = groupChecklistsByRoom(rows);
+  // } else {
+  //   // ✅ ALWAYS TRUST BACKEND STRUCTURE
+  //   normalizedForView = rows.map((room) => ({
+  //     ...room,
+  //     assigned_to_me: (room.assigned_to_me || []).map(normalizeChecklist),
+  //     available_for_me: (room.available_for_me || []).map(normalizeChecklist),
+  //     pending_for_me: (room.pending_for_me || []).map(normalizeChecklist),
+  //   }));
+  // }
+if (isInitializer) {
+  normalizedForView = groupChecklistsByRoom(rows);
+} else {
+  // ✅ backend already grouped
+  normalizedForView = rows.map((room) => ({
+    ...room,
+    assigned_to_me: (room.assigned_to_me || []).map(normalizeChecklist),
+    available_for_me: (room.available_for_me || []).map(normalizeChecklist),
+    pending_for_me: (room.pending_for_me || []).map(normalizeChecklist),
+  }));
+}
     setChecklistData(normalizedForView);
 
     if (isInitializer && tabKey) {
@@ -1152,15 +1174,36 @@ const FlatInspectionPage = () => {
         role,
       });
 
+            // 🔥 ADD THIS BLOCK
+      const existing = await loadFlatChecklists({
+        status: statusByTab[activeTab] || "not_started",
+        offset: 0,
+        limit: 10,
+        tabKey: activeTab,
+        explicitRole: role,
+      });
+
+      // if (existing?.hasExistingQuestions) {
+      //   console.log("🛑 Existing checklist found — skipping CREATE");
+
+      //   setFlatInitReady(true);
+
+      //   return {
+      //     skipped: true,
+      //     reason: "already_exists",
+      //   };
+      // }
+
       const initRes = await NEWchecklistInstance.get(INIT_CONTEXT_API_URL, {
         params: {
           project_id: Number(projectId),
-          purpose_id:
-            Number(
-              localStorage.getItem(
-                `SELECTED_PURPOSE_${projectId}_${resolvedTowerId}`,
-              ),
-            ) || undefined,
+          // purpose_id:
+          //   Number(
+          //     localStorage.getItem(
+          //       `SELECTED_PURPOSE_${projectId}_${resolvedTowerId}`,
+          //     ),
+          //   ) || undefined,
+          purpose_id: selectedPurposeId || undefined,
           phase_id: Number(selectedPhaseId),
           building_id: Number(resolvedTowerId),
           tower_id: Number(resolvedTowerId),
@@ -1176,56 +1219,118 @@ const FlatInspectionPage = () => {
       const ctx = initRes?.data || {};
       console.log("🟡 INIT_CONTEXT response", ctx);
 
+      if (ctx.message === "Checklist already exists.") {
+        console.log("🟢 Checklist already exists — no action needed");
+      }
+
+      // if (
+      //   ctx?.room_wise === true &&
+      //   Array.isArray(ctx?.target_rooms) &&
+      //   ctx.target_rooms.length === 0
+      // ) {
+      //   console.warn(
+      //     "⚠️ Template found but no matching actual rooms resolved. Keeping legacy/live rendering path.",
+      //   );
+
+      //   setFlatInitReady(true);
+      //   return {
+      //     skipped: true,
+      //     reason: "template_room_resolution_empty",
+      //     ctx,
+      //   };
+      // }
+
       if (
         ctx?.room_wise === true &&
         Array.isArray(ctx?.target_rooms) &&
         ctx.target_rooms.length === 0
       ) {
         console.warn(
-          "⚠️ Template found but no matching actual rooms resolved. Keeping legacy/live rendering path.",
+          "⚠️ Template found but no matching actual rooms resolved. Falling back to load.",
         );
 
+        await loadFlatChecklists({
+          status: statusByTab[activeTab] || "not_started",
+          offset: 0,
+          limit: 10,
+          tabKey: activeTab,
+          explicitRole: role,
+        });
+
         setFlatInitReady(true);
+
         return {
           skipped: true,
           reason: "template_room_resolution_empty",
           ctx,
         };
       }
+      // const createRes = await NEWchecklistInstance.post(
+      //   CREATE_LIVE_CHECKLIST_API_URL,
+      //   {
+      //     ...ctx,
+      //     project_id: ctx.project_id || Number(projectId),
+      //     purpose_id:
+      //       ctx.purpose_id ||
+      //       Number(
+      //         localStorage.getItem(
+      //           `SELECTED_PURPOSE_${projectId}_${resolvedTowerId}`,
+      //         ),
+      //       ) ||
+      //       undefined,
+      //     phase_id: ctx.phase_id || Number(selectedPhaseId),
+      //     building_id: ctx.building_id || Number(resolvedTowerId),
+      //     tower_id: ctx.tower_id || Number(resolvedTowerId),
+      //     level_id: ctx.level_id || (levelId ? Number(levelId) : undefined),
+      //     flat_id: ctx.flat_id || Number(flatId),
+      //   },
+      //   {
+      //     headers: {
+      //       Authorization: `Bearer ${token}`,
+      //     },
+      //   },
+      // );
+      let createRes = null;
 
-      const createRes = await NEWchecklistInstance.post(
-        CREATE_LIVE_CHECKLIST_API_URL,
-        {
-          ...ctx,
-          project_id: ctx.project_id || Number(projectId),
-          purpose_id:
-            ctx.purpose_id ||
-            Number(
-              localStorage.getItem(
-                `SELECTED_PURPOSE_${projectId}_${resolvedTowerId}`,
-              ),
-            ) ||
-            undefined,
-          phase_id: ctx.phase_id || Number(selectedPhaseId),
-          building_id: ctx.building_id || Number(resolvedTowerId),
-          tower_id: ctx.tower_id || Number(resolvedTowerId),
-          level_id: ctx.level_id || (levelId ? Number(levelId) : undefined),
-          flat_id: ctx.flat_id || Number(flatId),
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
+      if (ctx.message === "Template found") {
+        if (!ctx.stage_id) {
+  throw new Error("❌ stage_id missing from init-context");
+}
+        createRes = await NEWchecklistInstance.post(
+          CREATE_LIVE_CHECKLIST_API_URL,
+          {
+            project_id: ctx.project_id || Number(projectId),
+            // purpose_id:
+            //   ctx.purpose_id ||
+            //   Number(
+            //     localStorage.getItem(
+            //       `SELECTED_PURPOSE_${projectId}_${resolvedTowerId}`,
+            //     ),
+            //   ) ||
+            //   undefined,
+            purpose_id: ctx.purpose_id || selectedPurposeId || undefined,
+            phase_id: ctx.phase_id || Number(selectedPhaseId),
+            stage_id: ctx.stage_id,
+            building_id: ctx.building_id || Number(resolvedTowerId),
+            tower_id: ctx.tower_id || Number(resolvedTowerId),
+            level_id: ctx.level_id || (levelId ? Number(levelId) : undefined),
+            flat_id: ctx.flat_id || Number(flatId),
           },
-        },
-      );
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
 
-      console.log("🟢 CREATE_LIVE_CHECKLIST response", createRes?.data);
+        console.log("🟢 CREATE_LIVE_CHECKLIST response", createRes?.data);
+      }
 
-      setActiveTab("ready-to-start");
+      // setActiveTab("ready-to-start");
       setFlatInitReady(true);
 
       return {
-        created: true,
+        created: !!createRes,
         ctx,
         createData: createRes?.data || null,
       };
@@ -1244,11 +1349,55 @@ const FlatInspectionPage = () => {
   };
 
   const getAllChecklistsFromRoom = (roomData) => [
+    ...(roomData?.checklists || []),
     ...(roomData?.assigned_to_me || []),
     ...(roomData?.available_for_me || []),
     ...(roomData?.pending_for_me || []),
   ];
 
+const getVisibleChecklists = (roomData) => {
+  const role = String(userRole || "").toUpperCase();
+
+  // ✅ WORKFLOW ROLES
+  if (role === "CHECKER" || role === "MAKER" || role === "SUPERVISOR") {
+    if (activeWorkTab === "assigned-work") {
+      return roomData?.assigned_to_me || [];
+    }
+    return roomData?.available_for_me || [];
+  }
+
+  // ✅ INITIALIZER
+  const allChecklists = roomData?.checklists || [];
+
+  if (activeTab === "ready-to-start") {
+    return allChecklists.filter((c) => c.status === "not_started");
+  }
+
+  if (activeTab === "actively-working") {
+    return allChecklists.filter((c) => c.status === "in_progress");
+  }
+
+  return allChecklists;
+};
+
+const fetchRoomsForFlat = async () => {
+  console.log("🔥 calling rooms api", flatId);
+  try {
+    setRoomsLoading(true);
+    const token = localStorage.getItem("ACCESS_TOKEN");
+    const res = await projectInstance.get(`/units-by-id/?flat_id=${Number(flatId)}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const unit = res.data?.units?.[0];
+    setRooms(unit?.rooms || []);
+  } catch (err) {
+    console.error("❌ Failed to fetch rooms:", err);
+  } finally {
+    setRoomsLoading(false);
+  }
+};
   // const getChecklistParams = (extraParams = {}) => ({
   //   project_id: Number(projectId),
   //   ...(selectedPhaseId ? { phase_id: Number(selectedPhaseId) } : {}),
@@ -1770,89 +1919,82 @@ const FlatInspectionPage = () => {
   //     setTabLoading((prev) => ({ ...prev, [tabKey]: false }));
   //   }
   // };
+const fetchTabData = async (tabKey) => {
+  const tabConfig = initializerTabs.find((tab) => tab.key === tabKey);
+  if (!tabConfig) return;
 
-  const fetchTabData = async (tabKey) => {
-    const tabConfig = initializerTabs.find((tab) => tab.key === tabKey);
-    if (!tabConfig) return;
+  setTabLoading((prev) => ({ ...prev, [tabKey]: true }));
 
-    setTabLoading((prev) => ({ ...prev, [tabKey]: true }));
+  try {
+    const role = String(
+      userRole || readActiveRoleFromStorage(projectId) || "",
+    ).toUpperCase();
 
-    try {
-      const role = String(
-        userRole || readActiveRoleFromStorage(projectId) || "",
-      ).toUpperCase();
+    setPerformanceMetrics((prev) => ({
+      ...prev,
+      apiCalls: prev.apiCalls + 1,
+    }));
 
-      setPerformanceMetrics((prev) => ({
-        ...prev,
-        apiCalls: prev.apiCalls + 1,
-      }));
+    // ✅ INITIALIZER FLOW
+    if (isInitializerUser(role)) {
+      console.log("🚀 INITIALIZER FLOW START");
 
-      if (isInitializerUser(role)) {
-        let shouldReloadAfterInit = false;
+      // ✅ STEP 1: CALL INIT ONLY ONCE PER FLAT
+      if (!flatInitReady && !flatInitLoading) {
+        console.log("🧠 INIT_CONTEXT TRIGGERED");
 
-        const firstLoad = await loadFlatChecklists({
-          status: tabConfig.apiStatus,
-          offset: 0,
-          limit: 10,
-          tabKey,
-          explicitRole: role,
-        });
-
-        if (
-          tabKey === "ready-to-start" &&
-          !firstLoad?.hasExistingQuestions &&
-          !flatInitLoading
-        ) {
-          const initResult = await ensureFlatChecklistForInitializer(role);
-          shouldReloadAfterInit = !!initResult?.created;
-        }
-
-        if (shouldReloadAfterInit) {
-          await loadFlatChecklists({
-            status: tabConfig.apiStatus,
-            offset: 0,
-            limit: 10,
-            tabKey,
-            explicitRole: role,
-          });
-        }
-
-        return;
+        await ensureFlatChecklistForInitializer(role);
       }
 
+      // ✅ STEP 2: LOAD CHECKLIST AFTER INIT
       await loadFlatChecklists({
         status: tabConfig.apiStatus,
         offset: 0,
         limit: 10,
-        tabKey: null,
+        tabKey,
         explicitRole: role,
       });
-    } catch (err) {
-      console.error(`❌ Failed to fetch tab data for ${tabKey}:`, err);
 
-      setChecklistData([]);
-      setTabData((prev) => ({
-        ...prev,
-        [tabKey]: [],
-      }));
-      setPaginationInfo({
-        count: 0,
-        next: null,
-        previous: null,
-      });
-
-      toast.error(`Failed to load ${tabKey}`, {
-        style: {
-          background: themeConfig.error,
-          color: "white",
-          borderRadius: "12px",
-        },
-      });
-    } finally {
-      setTabLoading((prev) => ({ ...prev, [tabKey]: false }));
+      return;
     }
-  };
 
+    // ✅ NON-INITIALIZER FLOW (unchanged)
+    await loadFlatChecklists({
+      status: tabConfig.apiStatus,
+      offset: 0,
+      limit: 10,
+      tabKey: null,
+      explicitRole: role,
+    });
+  } catch (err) {
+    console.error(`❌ Failed to fetch tab data for ${tabKey}:`, err);
+
+    setChecklistData([]);
+    setTabData((prev) => ({
+      ...prev,
+      [tabKey]: [],
+    }));
+    setPaginationInfo({
+      count: 0,
+      next: null,
+      previous: null,
+    });
+
+    toast.error(`Failed to load ${tabKey}`, {
+      style: {
+        background: themeConfig.error,
+        color: "white",
+        borderRadius: "12px",
+      },
+    });
+  } finally {
+    setTabLoading((prev) => ({ ...prev, [tabKey]: false }));
+  }
+};
+
+useEffect(() => {
+  setFlatInitReady(false);
+}, [flatId]);
   // const getOffsetFromPageUrl = (url) => {
   //   if (!url) return null;
   //   try {
@@ -2243,10 +2385,12 @@ const FlatInspectionPage = () => {
             setChecklistData((prevData) =>
               prevData.map((roomData) => ({
                 ...roomData,
-                checklists: roomData.checklists.map((checklist) =>
-                  checklist.id === checklistId
-                    ? { ...checklist, status: "in_progress" }
-                    : checklist,
+                // checklists: roomData.checklists.map((checklist) =>
+                available_for_me: (roomData.available_for_me || []).map(
+                  (checklist) =>
+                    checklist.id === checklistId
+                      ? { ...checklist, status: "in_progress" }
+                      : checklist,
                 ),
               })),
             );
@@ -2773,7 +2917,7 @@ const FlatInspectionPage = () => {
           {pageLoading
             ? "Loading…"
             : pageState.count > 0
-              ? `Showing ${showingStart}–${showingEnd} of ${pageState.count} (Page ${pageState.page} of ${totalPages})`
+              ? `Showing ${showingStart}–${showingEnd} rooms(Page ${pageState.page} of ${totalPages}) Total: ${pageState.count} checklists `
               : "No results"}
         </div>
 
@@ -3708,11 +3852,11 @@ const FlatInspectionPage = () => {
   }) => {
     const [isRoomExpanded, setIsRoomExpanded] = useState(false);
 
-    // Debug room name for all roles
-    console.log(
-      `🏠 RoomSection Debug - Role: ${userRole}, ID: ${roomId}, Name: ${roomName}`,
-    );
-    console.log(`🏠 RoomSection Room Detail:`, roomDetail);
+    // // Debug room name for all roles
+    // console.log(
+    //   `🏠 RoomSection Debug - Role: ${userRole}, ID: ${roomId}, Name: ${roomName}`,
+    // );
+    // console.log(`🏠 RoomSection Room Detail:`, roomDetail);
 
     return (
       <div
@@ -6319,8 +6463,8 @@ const FlatInspectionPage = () => {
     const results = data.results || data || [];
     const rows = Array.isArray(results) ? results : [results];
 
-    setChecklistData(groupWorkChecklistsByRoom(rows));
-
+    // setChecklistData(groupWorkChecklistsByRoom(rows));
+setChecklistData(rows);
     setPageState((prev) => ({
       ...prev,
       count: data.count ?? rows.length,
@@ -6877,6 +7021,13 @@ const handlePrevPage = async () => {
     checklistData,
     stageInfo,
   ]);
+
+  
+useEffect(() => {
+  if (!flatId) return;
+
+  fetchRoomsForFlat();
+}, [flatId]);
 
   if (loading) {
     return (
@@ -7923,8 +8074,10 @@ const handlePrevPage = async () => {
                   // const firstChecklist = roomData.checklists?.[0];
 
                   // const allChecklists = roomData.checklists || [];
-                  const allChecklists = getAllChecklistsFromRoom(roomData);
-                  const firstChecklist = getAllChecklistsFromRoom(roomData)[0];
+                  // const allChecklists = getAllChecklistsFromRoom(roomData);
+                  const allChecklists = roomData.checklists || [];
+                  // const firstChecklist = getAllChecklistsFromRoom(roomData)[0];
+                  const firstChecklist = (roomData.checklists || [])[0];
                   const roomKey = roomData.room_id || index;
                   const roomName = getRoomDisplayName(roomData);
 
@@ -8035,7 +8188,41 @@ const handlePrevPage = async () => {
                     activeWorkTab === "available-work"
                       ? "available_for_me"
                       : "assigned_to_me";
-                  let roomItems = roomData[currentTabDataSource] || [];
+                  // let roomItems = roomData[currentTabDataSource] || [];
+                  let roomItems = [];
+
+                  if (isInitializerUser(userRole)) {
+                    roomItems = roomData.checklists || [];
+                  } else {
+                    const currentTabDataSource =
+                      activeWorkTab === "available-work"
+                        ? "available_for_me"
+                        : "assigned_to_me";
+
+                   if (userRole === "MAKER") {
+  // ✅ MAKER always uses available
+  roomItems = roomData.available_for_me || [];
+
+} else if (userRole === "CHECKER") {
+  // ✅ CHECKER FIX (IMPORTANT)
+
+  if (activeWorkTab === "available-work") {
+    // fallback to assigned if available is empty
+    roomItems =
+      roomData.available_for_me?.length > 0
+        ? roomData.available_for_me
+        : roomData.assigned_to_me || [];
+  } else {
+    roomItems =
+      roomData.assigned_to_me?.length > 0
+        ? roomData.assigned_to_me
+        : roomData.available_for_me || [];
+  }
+
+} else {
+  // other roles
+  roomItems = roomData[currentTabDataSource] || [];
+}}
 
                   // 🔧 FIX: SUPERVISOR Deduplication Logic
                   // 🔧 ENHANCED FIX: SUPERVISOR Deduplication Logic at Checklist Level

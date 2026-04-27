@@ -186,7 +186,7 @@ const isAdmin = role === "Admin";
     { value: "CHECKER", label: "CHECKER" },
     { value: "MAKER", label: "MAKER" },
     { value: "SECURITY_GUARD", label: "SECURITY GUARD" },
-    { value: "Intializer", label: "INITIALIZER" },
+    { value: "Intializer", label: "Intializer" },
   ];
     const MANAGER_ROLE_OPTIONS = [
     { value: "MANAGER", label: "Manager" },
@@ -1075,7 +1075,7 @@ const handleManagerFinalSubmit = async () => {
         // Normalise initializer spelling to backend's choice
         if (v.toLowerCase() === "initializer" || v.toLowerCase() === "intializer") {
           // v = "Intializer"; // 👈 EXACT value backend uses
-          v = "INTIALIZER"; // 👈 EXACT value backend uses
+          v = "Intializer"; // 👈 EXACT value backend uses
         }
 
         // SUPERVISOR, CHECKER, MAKER, SECURITY_GUARD already match backend choices
